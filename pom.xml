@@ -6,8 +6,31 @@
 	<name>Quuppa tag emulation library for Android</name>
 	<version>1.0.0-SNAPSHOT</version>
 	<description>Quuppa tag emulation library for Android</description>
+	<url>https://github.com/quuppalabs/android-quuppa-taglib</url>
+
+	<properties>
+		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+	</properties>
+
+	<developers>
+		<developer>
+			<id>kaosko</id>
+			<name>Kalle Korhonen</name>
+			<email>kaosko@apache.org</email>
+			<url>http://people.apache.org/~kaosko</url>
+			<timezone>+2</timezone>
+		</developer>
+	</developers>
+	<licenses>
+		<license>
+			<name>Apache License, Version 2.0</name>
+			<url>http://www.apache.org/licenses/LICENSE-2.0.txt</url>
+			<distribution>repo</distribution>
+		</license>
+	</licenses>
+	
 	<scm>
-		<connection>scm:git:git@github.com/quuppalabs/android-quuppa-taglib.git</connection>
+		<connection>scm:git:git@github.com:quuppalabs/android-quuppa-taglib.git</connection>
 		<tag>HEAD</tag>
 		<url>https://github.com/quuppalabs/android-quuppa-taglib</url>
 	</scm>
