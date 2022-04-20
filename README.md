@@ -1,6 +1,6 @@
 # android-quuppa-taglib
 
-A simple Android tag emulation library to be included into Android application projects. You can make any Android device trackable in [Quuppa Intelligent Locating System](https://www.quuppa.com/) by including this library into your Android application.
+A simple Android tag emulation library to be included into Android application projects. You can make any Android device with BLE and API level 22 (Android version 5.1+) trackable in [Quuppa Intelligent Locating System](https://www.quuppa.com/) by including this library into your Android application.
 
 ## Getting Started
 
