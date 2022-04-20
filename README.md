@@ -1,10 +1,10 @@
 # android-quuppa-taglib
 
-A simple Android tag emulation library to be included into Android application projects. 
+A simple Android tag emulation library to be included into Android application projects. You can make any Android device trackable by including this library into your Android application.
 
 ## Getting Started
 
-See the android-quuppa-tagdemo for an example of how to use this library. Also check out javadoc for the library on javadoc.io.
+See the [android-quuppa-tag demo](https://github.com/quuppalabs/demo-android-quuppa-tag) for an example of how to use this library. Also check out javadoc for the library on javadoc.io.
 
 [![javadoc](https://javadoc.io/badge2/com.quuppa/android-quuppa-taglib/javadoc.svg)](https://javadoc.io/doc/com.quuppa/android-quuppa-taglib) 
 
