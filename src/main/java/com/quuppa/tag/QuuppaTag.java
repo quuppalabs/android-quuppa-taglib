@@ -35,6 +35,12 @@ import android.provider.Settings.Secure;
  *
  */
 public abstract class QuuppaTag {
+    public static String PREFS = "QUUPPATAG";
+    public static final String PREFS_TAG_ID = "TAG_ID";
+	public static final String PREFS_DEVICETYPE = "DEVICETYPE";
+	public static final String PREFS_ENABLED = "ENABLED";
+	public static final String PREFS_NOTIFIED_ACTIVITY_CLASSNAME = "NOTIFIED_ACTIVITY_CLASSNAME";
+	
     /** Creates a byte array with the given tag ID */
     private static byte[] createQuuppaAddress(String tagID) {
         byte[] bytes = new byte[6];
@@ -46,7 +52,17 @@ public abstract class QuuppaTag {
         bytes[5] = (byte) Integer.parseInt(tagID.substring(10, 12), 16);
         return bytes;
     }
+    
+	public enum DeviceType {
+		SMARTPHONE((byte) 0x21), TABLET((byte) 0x22);
 
+		public byte type;
+
+		DeviceType(byte type) {
+			this.type = type;
+		}
+	}
+	
     /** Constructs a byte array using the Direction Finding Packet Specification.
      * Please see the 'Specification of Quuppa Tag Emulation using Bluetooth Wireless Technology' -document for more details.
      * @param tagID Tag ID to be injected into the packet
@@ -55,13 +71,13 @@ public abstract class QuuppaTag {
      * @return constructed byte array
      * @throws QuuppaTagException 
      */
-    private static byte[] createBytesWithQuuppaDFPacket(String tagID, int mode, int txPower) throws QuuppaTagException {
+    protected static byte[] createQuuppaDFPacketAdvertiseData(String tagID, DeviceType deviceType, int mode, int txPower, boolean moving) throws QuuppaTagException {
         // Please see the 'Specification of Quuppa Tag Emulation using Bluetooth Wireless Technology' -document for details
 
         byte[] bytes = new byte[]{
                 (byte) 0x01, // Quuppa Packet ID
-                (byte) 0x21, // Device Type (0x21 = android smartphone, 0x22 = android tablet)
-                (byte) 0x1D, // Payload header (0x1D = moving at walking speed, 0x1C = stationary)
+                deviceType.type, // Device Type (0x21 = android smartphone, 0x22 = android tablet)
+                moving ? (byte) 0x1D : (byte) 0x1C, // Payload header (0x1D = moving at walking speed, 0x1C = stationary)
                 (byte) 0x01, (byte) 0x02, (byte) 0x03, (byte) 0x04, (byte) 0x05, (byte) 0x06, // Quuppa Address payload, will be replaced shortly...
                 (byte) 0xb4, // checksum, calculated later
                 (byte) 0x67, (byte) 0xF7, (byte) 0xDB, (byte) 0x34, (byte) 0xC4, (byte) 0x03, (byte) 0x8E, (byte) 0x5C, (byte) 0x0B, (byte) 0xAA, (byte) 0x97, (byte) 0x30, (byte) 0x56, (byte) 0xE6 // DF field, 14 octets
@@ -79,48 +95,104 @@ public abstract class QuuppaTag {
         }
         return bytes;
     }
-    
-    private static final String PREF_TAG_ID = "TAG_ID";
-    
-    public synchronized static String getGeneratedTagId(Context context) {
+        
+    public synchronized static String getOrInitTagId(Context context) {
         SharedPreferences sharedPrefs = context.getSharedPreferences(
-                "QUUPPA", Context.MODE_PRIVATE);
-        String tagId = sharedPrefs.getString(PREF_TAG_ID, null);
+                PREFS, Context.MODE_PRIVATE);
+        String tagId = sharedPrefs.getString(PREFS_TAG_ID, null);
         if (tagId == null) {
         	tagId = Secure.getString(context.getContentResolver(), Secure.ANDROID_ID);
         	if (tagId == null || tagId.length() < 12) tagId = UUID.randomUUID().toString();
             Editor editor = sharedPrefs.edit();
             tagId = tagId.substring(tagId.length() - 12);
-            editor.putString(PREF_TAG_ID, tagId);
+            editor.putString(PREFS_TAG_ID, tagId);
             editor.commit();
         }    	
     	return tagId;
     }
-
+    
+	public static void setTagId(Context context, String tagId) {
+		SharedPreferences sharedPrefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+		Editor editor = sharedPrefs.edit();
+		editor.putString(PREFS_TAG_ID, tagId);
+		editor.commit();
+	}
+    
+	public static DeviceType getOrInitDeviceType(Context context) {
+        SharedPreferences sharedPrefs = context.getSharedPreferences(
+                PREFS, Context.MODE_PRIVATE);
+        String typeString = sharedPrefs.getString(PREFS_DEVICETYPE, null);
+        DeviceType type = null;
+        try {
+        	if (typeString != null) type = DeviceType.valueOf(typeString);
+        } catch (IllegalArgumentException e) {}
+        
+        if (type == null) {
+        	type = DeviceType.SMARTPHONE;
+        	typeString = type.name();
+            Editor editor = sharedPrefs.edit();
+            editor.putString(PREFS_DEVICETYPE, typeString);
+            editor.commit();
+        }    	
+    	return type;
+	}
+	
+    public static boolean isServiceEnabled(Context context) {
+        SharedPreferences sharedPrefs = context.getSharedPreferences(QuuppaTag.PREFS, Context.MODE_PRIVATE);
+        return sharedPrefs.getBoolean(QuuppaTag.PREFS_ENABLED, false);
+    }
+	
+    
+	public static void setServiceEnabled(Context context, boolean enabled) {
+		SharedPreferences sharedPrefs = context.getSharedPreferences(QuuppaTag.PREFS, Context.MODE_PRIVATE);
+		Editor editor = sharedPrefs.edit();
+		editor.putBoolean(QuuppaTag.PREFS_ENABLED, enabled);
+		editor.commit();
+	}
+	
+	@SuppressWarnings("rawtypes")
+	public static Class getNotifiedActivity(Context context) {
+        SharedPreferences sharedPrefs = context.getSharedPreferences(
+                PREFS, Context.MODE_PRIVATE);
+        String className = sharedPrefs.getString(PREFS_NOTIFIED_ACTIVITY_CLASSNAME, null);
+        if (className == null) return null;
+		try {
+			return Class.forName(className);
+		} catch (ClassNotFoundException e) {
+		}
+		return null;
+	}	
+        
+	public static void setNotifiedActivity(Context context, @SuppressWarnings("rawtypes") Class activityClass) {
+        SharedPreferences sharedPrefs = context.getSharedPreferences(
+                PREFS, Context.MODE_PRIVATE);
+        Editor editor = sharedPrefs.edit();
+        editor.putString(PREFS_NOTIFIED_ACTIVITY_CLASSNAME, activityClass.getCanonicalName());
+        editor.commit();
+	}
+    
     /**
      * Stops Advertising for given callback instance.
      * @param context {@link Context} to look up Bluetooth service
      * @param callback {@link AdvertiseCallback} instance to be stopped.
      */
+    @Deprecated
     public static void stopAdvertising(Context context, AdvertiseCallback callback) {
         BluetoothManager btManager = (BluetoothManager) context.getSystemService(Activity.BLUETOOTH_SERVICE);
         BluetoothAdapter btAdapter = btManager.getAdapter();
-        // If not enabled (potentially anymore), return silenty
+        // If not enabled (potentially anymore), return silently
         if (!btAdapter.isEnabled()) return;
         btAdapter.getBluetoothLeAdvertiser().stopAdvertising(callback);
-//        callback.onStopSuccess();
     }
 
+    @Deprecated
     public static void startAdvertising(Context context, AdvertiseCallback callback) throws QuuppaTagException {
-    	startAdvertising(context, callback, getGeneratedTagId(context), AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY, AdvertiseSettings.ADVERTISE_TX_POWER_HIGH);
+    	startAdvertising(context, callback, true, AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY, AdvertiseSettings.ADVERTISE_TX_POWER_HIGH);
     }
-    
-    public static void startAdvertising(Context context, AdvertiseCallback callback, int mode, int txPower) throws QuuppaTagException {
-    	startAdvertising(context, callback, getGeneratedTagId(context), mode, txPower);
-    }
-    
-    public static void startAdvertising(Context context, AdvertiseCallback callback, String tagID) throws QuuppaTagException {
-    	startAdvertising(context, callback, tagID, AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY, AdvertiseSettings.ADVERTISE_TX_POWER_HIGH);
+
+    @Deprecated
+    public static void startAdvertising(Context context, AdvertiseCallback callback, boolean moving) throws QuuppaTagException {
+    	startAdvertising(context, callback, moving);
     }
     
     /**
@@ -130,12 +202,15 @@ public abstract class QuuppaTag {
      * @param callback Callback that gives ID to the advertising instance.
      * @throws QuuppaTagException if Bluetooth service is not enabled or there are errors communicating with it
      */
-	public static void startAdvertising(Context context, AdvertiseCallback callback, String tagID, int mode,
+    @Deprecated
+	public static void startAdvertising(Context context, AdvertiseCallback callback, boolean moving, int mode,
 			int txPower) throws QuuppaTagException {
+		String tagID = getOrInitTagId(context);
+		
 		AdvertiseSettings advertiseSettings = new AdvertiseSettings.Builder().setAdvertiseMode(mode)
 				.setTxPowerLevel(txPower).setConnectable(true).build();
-
-		byte[] bytes = createBytesWithQuuppaDFPacket(tagID, mode, txPower);
+		
+		byte[] bytes = createQuuppaDFPacketAdvertiseData(tagID, getOrInitDeviceType(context), mode, txPower, moving);
 
 		AdvertiseData advertisementData = new AdvertiseData.Builder().setIncludeTxPowerLevel(false)
 				.addManufacturerData(0x00C7, bytes).build();
@@ -143,8 +218,8 @@ public abstract class QuuppaTag {
 		BluetoothLeAdvertiser bluetoothLeAdvertiser = getBluetoothLeAdvertiser(context);
 		bluetoothLeAdvertiser.startAdvertising(advertiseSettings, advertisementData, callback);
 	}
-    
-	private static BluetoothLeAdvertiser getBluetoothLeAdvertiser(Context context) throws QuuppaTagException {
+	
+	protected static BluetoothLeAdvertiser getBluetoothLeAdvertiser(Context context) throws QuuppaTagException {
 		BluetoothManager btManager = (BluetoothManager) context.getSystemService(Activity.BLUETOOTH_SERVICE);
 		BluetoothAdapter btAdapter = btManager.getAdapter();
 		if (!btAdapter.isEnabled())

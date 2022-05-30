@@ -12,13 +12,17 @@
 
 package com.quuppa.tag;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+
 /*
  * Calculate CRC for Quuppa advertisement packets
  */
 public class CRC8 {
     public static final byte INITIAL_REGISTER_VALUE = (byte)0x00;
 
-    public static byte simpleCRC(java.io.InputStream s, byte reg) throws java.io.IOException {
+    public static byte simpleCRC(InputStream s, byte reg) throws IOException {
         byte bitMask = (byte)(1 << 7);
 
         // Process each message byte.
@@ -41,11 +45,11 @@ public class CRC8 {
 
         return reg;
     }
-    public static byte simpleCRC(byte[] buffer, byte register) throws java.io.IOException {
-        java.io.ByteArrayInputStream stream = new java.io.ByteArrayInputStream(buffer);
+    public static byte simpleCRC(byte[] buffer, byte register) throws IOException {
+        ByteArrayInputStream stream = new ByteArrayInputStream(buffer);
         return simpleCRC(stream, register);
     }
-    public static byte simpleCRC(byte[] buffer) throws java.io.IOException {
+    public static byte simpleCRC(byte[] buffer) throws IOException {
         return simpleCRC(buffer, INITIAL_REGISTER_VALUE);
     }
 }
