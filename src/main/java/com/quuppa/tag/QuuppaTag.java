@@ -13,6 +13,8 @@
 package com.quuppa.tag;
 
 import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
 
 import android.app.Activity;
@@ -21,6 +23,7 @@ import android.bluetooth.BluetoothManager;
 import android.bluetooth.le.AdvertiseCallback;
 import android.bluetooth.le.AdvertiseData;
 import android.bluetooth.le.AdvertiseSettings;
+import android.bluetooth.le.AdvertisingSetParameters;
 import android.bluetooth.le.BluetoothLeAdvertiser;
 import android.content.Context;
 import android.content.SharedPreferences;
@@ -40,6 +43,7 @@ public abstract class QuuppaTag {
 	public static final String PREFS_DEVICETYPE = "DEVICETYPE";
 	public static final String PREFS_ENABLED = "ENABLED";
 	public static final String PREFS_NOTIFIED_ACTIVITY_CLASSNAME = "NOTIFIED_ACTIVITY_CLASSNAME";
+	public static final String PREFS_ADVERTISINGSET_TX_POWER = "ADV_TX_POWER";
 	
     /** Creates a byte array with the given tag ID */
     private static byte[] createQuuppaAddress(String tagID) {
@@ -66,12 +70,10 @@ public abstract class QuuppaTag {
     /** Constructs a byte array using the Direction Finding Packet Specification.
      * Please see the 'Specification of Quuppa Tag Emulation using Bluetooth Wireless Technology' -document for more details.
      * @param tagID Tag ID to be injected into the packet
-     * @param mode One of the values of AdvertiseSettings.ADVERTISE_MODE_*. The value is injected in the DF Packet as indication of transmit rate.
-     * @param txPower One of the values of AdvertiseSettings.ADVERTISE_TX_*. The value is injected in the DF Packet as indication of transmit power.
      * @return constructed byte array
      * @throws QuuppaTagException 
      */
-    protected static byte[] createQuuppaDFPacketAdvertiseData(String tagID, DeviceType deviceType, int mode, int txPower, boolean moving) throws QuuppaTagException {
+    protected static byte[] createQuuppaDFPacketAdvertiseData(String tagID, DeviceType deviceType, boolean moving) throws QuuppaTagException {
         // Please see the 'Specification of Quuppa Tag Emulation using Bluetooth Wireless Technology' -document for details
 
         byte[] bytes = new byte[]{
@@ -117,6 +119,22 @@ public abstract class QuuppaTag {
 		editor.putString(PREFS_TAG_ID, tagId);
 		editor.commit();
 	}
+	
+	public static int getAdvertisingSetTxPower(Context context) {
+        SharedPreferences sharedPrefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        return sharedPrefs.getInt(PREFS_ADVERTISINGSET_TX_POWER, AdvertisingSetParameters.TX_POWER_HIGH );
+	}
+	
+	private static final Set<Integer> availableTxPowers = new HashSet<>(Arrays.asList(AdvertisingSetParameters.TX_POWER_HIGH, AdvertisingSetParameters.TX_POWER_MEDIUM, AdvertisingSetParameters.TX_POWER_LOW, AdvertisingSetParameters.TX_POWER_ULTRA_LOW));
+	
+	public static void setAdvertisingSetTxPower(Context context, int advertisingSetTxPower) {
+		SharedPreferences sharedPrefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+		if (!availableTxPowers.contains(advertisingSetTxPower)) advertisingSetTxPower = AdvertisingSetParameters.TX_POWER_HIGH;
+		
+		Editor editor = sharedPrefs.edit();
+		editor.putInt(PREFS_ADVERTISINGSET_TX_POWER, advertisingSetTxPower);
+		editor.commit();
+	}
     
 	public static DeviceType getOrInitDeviceType(Context context) {
         SharedPreferences sharedPrefs = context.getSharedPreferences(
@@ -150,20 +168,20 @@ public abstract class QuuppaTag {
 		editor.commit();
 	}
 	
-	@SuppressWarnings("rawtypes")
-	public static Class getNotifiedActivity(Context context) {
+	@SuppressWarnings("unchecked")
+	public static Class<? extends Activity> getNotifiedActivityClass(Context context) {
         SharedPreferences sharedPrefs = context.getSharedPreferences(
                 PREFS, Context.MODE_PRIVATE);
         String className = sharedPrefs.getString(PREFS_NOTIFIED_ACTIVITY_CLASSNAME, null);
         if (className == null) return null;
 		try {
-			return Class.forName(className);
+			return (Class<? extends Activity>)Class.forName(className);
 		} catch (ClassNotFoundException e) {
 		}
 		return null;
 	}	
         
-	public static void setNotifiedActivity(Context context, @SuppressWarnings("rawtypes") Class activityClass) {
+	public static void setNotifiedActivityClass(Context context, Class<? extends Activity> activityClass) {
         SharedPreferences sharedPrefs = context.getSharedPreferences(
                 PREFS, Context.MODE_PRIVATE);
         Editor editor = sharedPrefs.edit();
@@ -210,7 +228,7 @@ public abstract class QuuppaTag {
 		AdvertiseSettings advertiseSettings = new AdvertiseSettings.Builder().setAdvertiseMode(mode)
 				.setTxPowerLevel(txPower).setConnectable(true).build();
 		
-		byte[] bytes = createQuuppaDFPacketAdvertiseData(tagID, getOrInitDeviceType(context), mode, txPower, moving);
+		byte[] bytes = createQuuppaDFPacketAdvertiseData(tagID, getOrInitDeviceType(context), moving);
 
 		AdvertiseData advertisementData = new AdvertiseData.Builder().setIncludeTxPowerLevel(false)
 				.addManufacturerData(0x00C7, bytes).build();

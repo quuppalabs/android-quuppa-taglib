@@ -22,12 +22,10 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.bluetooth.le.AdvertiseData;
-import android.bluetooth.le.AdvertiseSettings;
 import android.bluetooth.le.AdvertisingSet;
 import android.bluetooth.le.AdvertisingSetCallback;
 import android.bluetooth.le.AdvertisingSetParameters;
 import android.bluetooth.le.BluetoothLeAdvertiser;
-import android.bluetooth.le.PeriodicAdvertisingParameters;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -43,7 +41,6 @@ import android.util.Log;
 public class QuuppaTagService extends Service implements SensorEventListener {
 	public static long STATIONARY_TRESHOLD_MS = 60000L;
 	
-	public static Class<? extends Activity> NOTIFIED_ACTIVITY;
 	public static Icon ICON;
 	public static String NOTIFICATION_CHANNEL_ID = "QuuppaTagNotification";
 	public static String NOTIFICATION_CHANNEL_NAME = "Quuppa Tag Notifications";
@@ -67,6 +64,12 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 	private volatile boolean running = false;
 
 	private static long STATIONARY_CHECK_INTERVAL = 1000L * 60;
+	
+	private boolean advertisingStarted;
+
+	private String tagId;
+	private DeviceType deviceType;
+	private Class<? extends Activity> notifiedActivityClass;
 
 	private AdvertisingSetCallback advertisingSetCallback = new AdvertisingSetCallback() {
 
@@ -93,42 +96,25 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 		@Override
 		public void onAdvertisingSetStopped(AdvertisingSet advertisingSet) {
 			Log.v(QuuppaTagService.class.getSimpleName(), "onAdvertisingSetStopped()");
-			periodicAdvertisingStarted = false;
+			advertisingStarted = false;
 		}
 	};
 
-	private boolean periodicAdvertisingStarted;
-
-	private String tagId;
-
-	private DeviceType deviceType;
-
-	@SuppressWarnings("unchecked")
 	@Override
 	public void onCreate() {
 		super.onCreate();
 		ICON = Icon.createWithResource(this, android.R.drawable.ic_menu_mylocation); //  only mylocation available in 8, otherwise could also use perm_group_location as default
 
-		SharedPreferences preferences = this.getSharedPreferences( QuuppaTag.PREFS, Context.MODE_PRIVATE);
-		if (NOTIFIED_ACTIVITY != null) {
-			SharedPreferences.Editor editor = preferences.edit();
-			editor.putString(QuuppaTag.PREFS_NOTIFIED_ACTIVITY_CLASSNAME, NOTIFIED_ACTIVITY.getCanonicalName());
-			editor.commit();
-		} else
-			try {
-				String className = preferences.getString(QuuppaTag.PREFS_NOTIFIED_ACTIVITY_CLASSNAME, null);
-				if (className != null)
-					NOTIFIED_ACTIVITY = (Class<? extends Activity>) Class.forName(className);
-			} catch (ClassNotFoundException e) {
-				e.printStackTrace();
-			}
+		notificationChannelId = createNotificationChannel(this);
+		PendingIntent pendingIntent = null;
+		
+		notifiedActivityClass = QuuppaTag.getNotifiedActivityClass(this);
+		if (notifiedActivityClass != null) {
+			Intent notificationIntent = new Intent(this, notifiedActivityClass);
+			pendingIntent = PendingIntent.getActivity(this, 0, notificationIntent, 0);
+		}
 
-		createNotificationChannel();
-		if (NOTIFIED_ACTIVITY == null)
-			throw new RuntimeException("Could not start QuuppaTagService because no notified activity is set");
-		Intent notificationIntent = new Intent(this, NOTIFIED_ACTIVITY);
-		PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, notificationIntent, 0);
-
+		// content intent *can be* null, in that case user clicking notification just doesn't lead anywhere
 		Notification notification = new Notification.Builder(this, NOTIFICATION_CHANNEL_ID)
 				.setContentTitle("Quuppa Tag Service").setContentText(NOTIFICATION_DEFAULT_TEXT).setSmallIcon(ICON)
 				.setVisibility(Notification.VISIBILITY_PRIVATE)
@@ -146,7 +132,7 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 		accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
 		sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL);
 		
-		startPeriodicAdvertisingSet();
+		startAdvertisingSet();
 		startStationaryCheckAlarm();
 
 		// Acquire wake lock
@@ -180,16 +166,16 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 		if (!running) return;
 		
 		System.out.println("adjustAdvertisingSchedule(), moving " + moving + ", periodicAdvertisingStarted "
-				+ periodicAdvertisingStarted);
+				+ advertisingStarted);
 		
 		boolean wasMoving = moving;
 		moving = (System.currentTimeMillis() - lastMoved < STATIONARY_TRESHOLD_MS);
 		
-		if (!periodicAdvertisingStarted)
-			startPeriodicAdvertisingSet();
+		if (!advertisingStarted)
+			startAdvertisingSet();
 		else if (moving != wasMoving) {
-			stopPeriodicAdvertisingSet();
-			startPeriodicAdvertisingSet();
+			stopAdvertisingSet();
+			startAdvertisingSet();
 		}
 	}
 
@@ -208,12 +194,12 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 		getSystemService(AlarmManager.class).cancel(getStationaryAlarmIntent());
 	}
 
-	protected void stopPeriodicAdvertisingSet() {
+	protected void stopAdvertisingSet() {
 		try {
 			BluetoothLeAdvertiser bluetoothLeAdvertiser = QuuppaTag.getBluetoothLeAdvertiser(this);
 			Log.d(getClass().getSimpleName(), "stopPeriodicAdvertisingSet");
 			bluetoothLeAdvertiser.stopAdvertisingSet(advertisingSetCallback);
-			periodicAdvertisingStarted = false;
+			advertisingStarted = false;
 		} catch (QuuppaTagException e) {
 			sendBroadcast(new Intent(IntentAction.QT_BLE_NOT_ENABLED.name()));
 			return;
@@ -222,14 +208,10 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 	}
 
 	// never throw exception but send error broadcasts that can be listened to
-	protected void startPeriodicAdvertisingSet() {
-		int advertiseMode = moving ? AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY
-				: AdvertiseSettings.ADVERTISE_MODE_LOW_POWER;
-		int txPower = AdvertiseSettings.ADVERTISE_TX_POWER_HIGH;
-
+	protected void startAdvertisingSet() {
 		byte[] bytes = null;
 		try {
-			bytes = QuuppaTag.createQuuppaDFPacketAdvertiseData(tagId, deviceType, advertiseMode, txPower, moving);
+			bytes = QuuppaTag.createQuuppaDFPacketAdvertiseData(tagId, deviceType, moving);
 		} catch (QuuppaTagException e) {
 			// this should only fail in case of an IOException
 			e.printStackTrace();
@@ -239,38 +221,31 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 
 		// primary channel interval is 0.625ms per unit,
 		// https://developer.android.com/reference/android/bluetooth/le/AdvertisingSetParameters.Builder#setInterval(int)
-		int interval = moving ? 800 : 8000;
+		// ~3Hz / 0.1 Hz
+		int interval = moving ? 533 : 16000;
+		
+		int advertisingSetTxPower = QuuppaTag.getAdvertisingSetTxPower(this);
 
 		AdvertisingSetParameters primaryChannelAdvertisingSetParameters = new AdvertisingSetParameters.Builder()
-//	    		.setTxPowerLevel(moving ? AdvertisingSetParameters.TX_POWER_HIGH : AdvertisingSetParameters.TX_POWER_LOW)
-				.setTxPowerLevel(AdvertisingSetParameters.TX_POWER_HIGH).setInterval(interval).build();
+				.setTxPowerLevel(advertisingSetTxPower).setInterval(interval).build();
 
 		AdvertiseData advertiseData = new AdvertiseData.Builder().setIncludeTxPowerLevel(false)
 				.addManufacturerData(0x00C7, bytes).build();
 
 		AdvertiseData scanResponse = null;
-		AdvertiseData periodicData = advertiseData;
 
-		// periodic interval is 1.25ms per unit,
-		// https://developer.android.com/reference/android/bluetooth/le/PeriodicAdvertisingParameters.Builder#setInterval(int)
-		// ~3Hz / 0.1 Hz
-		int periodicAdvertisingInterval = moving ? 267 : 8000;
-//		int maxExtendedAdvertisingEvents = moving ? 0 : 4;
 		int maxExtendedAdvertisingEvents = 0;
 		// duration is 10ms per unit
 		// https://developer.android.com/reference/android/bluetooth/le/BluetoothLeAdvertiser#startAdvertisingSet(android.bluetooth.le.AdvertisingSetParameters,%20android.bluetooth.le.AdvertiseData,%20android.bluetooth.le.AdvertiseData,%20android.bluetooth.le.PeriodicAdvertisingParameters,%20android.bluetooth.le.AdvertiseData,%20int,%20int,%20android.bluetooth.le.AdvertisingSetCallback)
 		int duration = 0 ; // moving ? 0 : 2000; // never stop unless explicitly stopped
 
-		PeriodicAdvertisingParameters periodicAdvertisingParameters = new PeriodicAdvertisingParameters.Builder()
-				.setInterval(periodicAdvertisingInterval).build();
-
 		try {
 			BluetoothLeAdvertiser bluetoothLeAdvertiser = QuuppaTag.getBluetoothLeAdvertiser(this);
 			Log.d(getClass().getSimpleName(), "startPeriodicAdvertisingSet");
+			
 			bluetoothLeAdvertiser.startAdvertisingSet(primaryChannelAdvertisingSetParameters, advertiseData,
-					scanResponse, periodicAdvertisingParameters, periodicData, duration, maxExtendedAdvertisingEvents,
-					advertisingSetCallback);
-			periodicAdvertisingStarted = true;
+					scanResponse, null, null, duration, maxExtendedAdvertisingEvents, advertisingSetCallback);
+			advertisingStarted = true;
 		} catch (IllegalArgumentException iae) {
 			// This is ok, we may have had one running
 			Log.i(getClass().getSimpleName(),
@@ -288,7 +263,7 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 		running = false;
 		sensorManager.unregisterListener(this);
 
-		if (periodicAdvertisingStarted) stopPeriodicAdvertisingSet();
+		if (advertisingStarted) stopAdvertisingSet();
 		stopStationaryCheckAlarm();
 
 		NotificationManager manager = getSystemService(NotificationManager.class);
@@ -304,12 +279,12 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 		super.onDestroy();
 	}
 
-	private void createNotificationChannel() {
+	private static String createNotificationChannel(Context context) {
 		NotificationChannel notificationChannel = new NotificationChannel(NOTIFICATION_CHANNEL_ID,
 				NOTIFICATION_CHANNEL_NAME, NotificationManager.IMPORTANCE_LOW);
-		NotificationManager manager = getSystemService(NotificationManager.class);
+		NotificationManager manager = context.getSystemService(NotificationManager.class);
 		manager.createNotificationChannel(notificationChannel);
-		notificationChannelId = notificationChannel.getId();
+		return notificationChannel.getId();
 	}
 
 	public double SHAKE_THRESHOLD = 1.3;
