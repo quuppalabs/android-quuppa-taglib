@@ -182,7 +182,7 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 	private PendingIntent getStationaryAlarmIntent() {
 		Intent intent = new Intent(this, QuuppaTagService.class);
 		intent.setAction(IntentAction.QT_STATIONARY_CHECK.name());
-		return PendingIntent.getService(this, 1, intent, PendingIntent.FLAG_UPDATE_CURRENT);
+		return PendingIntent.getService(this, 1, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 	}
 
 	private void startStationaryCheckAlarm() {
