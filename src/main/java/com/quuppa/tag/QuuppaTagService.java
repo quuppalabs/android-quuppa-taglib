@@ -111,7 +111,7 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 		notifiedActivityClass = QuuppaTag.getNotifiedActivityClass(this);
 		if (notifiedActivityClass != null) {
 			Intent notificationIntent = new Intent(this, notifiedActivityClass);
-			pendingIntent = PendingIntent.getActivity(this, 0, notificationIntent, 0);
+			pendingIntent = PendingIntent.getActivity(this, 0, notificationIntent,  PendingIntent.FLAG_IMMUTABLE);
 		}
 
 		// content intent *can be* null, in that case user clicking notification just doesn't lead anywhere
