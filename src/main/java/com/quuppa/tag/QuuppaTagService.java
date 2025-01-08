@@ -12,6 +12,8 @@
 
 package com.quuppa.tag;
 
+import java.lang.reflect.Method;
+
 import com.quuppa.tag.QuuppaTag.DeviceType;
 
 import android.app.Activity;
@@ -34,6 +36,7 @@ import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
+import android.os.Build;
 import android.os.IBinder;
 import android.os.PowerManager;
 import android.util.Log;
@@ -75,7 +78,7 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 
 		@Override
 		public void onAdvertisingSetStarted(AdvertisingSet advertisingSet, int txPower, int status) {
-			Log.v(QuuppaTagService.class.getSimpleName(), "onAdvertisingSetStarted() moving " + moving);
+			Log.v(QuuppaTagService.class.getSimpleName(), "onAdvertisingSetStarted() status " + status + ", moving " + moving);
 		}
 
 		@Override
@@ -119,7 +122,24 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 				.setContentTitle("Quuppa Tag Service").setContentText(NOTIFICATION_DEFAULT_TEXT).setSmallIcon(ICON)
 				.setVisibility(Notification.VISIBILITY_PRIVATE)
 				.setContentIntent(pendingIntent).build();
-		startForeground(1, notification);
+		if (Build.VERSION.SDK_INT >= 34) // Build.VERSION_CODES.UPSIDE_DOWN_CAKE 
+		{
+            // startForeground(1, notification, 8) 
+			try {
+				// Note: Beginning with SDK Version Build.VERSION_CODES.UPSIDE_DOWN_CAKE, apps targeting SDK Version 
+				// Build.VERSION_CODES.UPSIDE_DOWN_CAKE or higher are not allowed to start foreground services without 
+				// specifying a valid foreground service type in the manifest attribute R.attr.foregroundServiceType, 
+				// and the parameter foregroundServiceType here must not be the ServiceInfo.FOREGROUND_SERVICE_TYPE_NONE. 
+				// See Behavior changes: Apps targeting Android 14 for more details.
+				// https://developer.android.com/reference/android/app/Service#startForeground(int,%20android.app.Notification,%20int)
+				Method method = getClass().getMethod("startForeground", new Class[] {int.class, Notification.class, int.class});
+				method.invoke(this, 1, notification, 8); // ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION 
+			} catch (Exception e) {
+				// shouldn't fail
+				Log.v(QuuppaTagService.class.getSimpleName(), "startForeground failed because: " + e.getMessage());
+			}
+		}
+        else startForeground(1, notification);
 	}
 	
 	private void init() {
