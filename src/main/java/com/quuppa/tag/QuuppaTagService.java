@@ -23,6 +23,7 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.le.AdvertiseData;
 import android.bluetooth.le.AdvertisingSet;
 import android.bluetooth.le.AdvertisingSetCallback;
@@ -133,10 +134,12 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 				// See Behavior changes: Apps targeting Android 14 for more details.
 				// https://developer.android.com/reference/android/app/Service#startForeground(int,%20android.app.Notification,%20int)
 				Method method = getClass().getMethod("startForeground", new Class[] {int.class, Notification.class, int.class});
-				method.invoke(this, 1, notification, 8); // ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION 
+				// We don't need location updates - yes RTLS produces location, but the app doesn't need it
+				// method.invoke(this, 1, notification, 8); // ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION 
+				method.invoke(this, 1, notification, 1073741824); // ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE 
 			} catch (Exception e) {
 				// shouldn't fail
-				Log.v(QuuppaTagService.class.getSimpleName(), "startForeground failed because: " + e.getMessage());
+				Log.v(QuuppaTagService.class.getSimpleName(), "startForeground failed because: " + e.getCause());
 			}
 		}
         else startForeground(1, notification);
@@ -247,29 +250,39 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 		int advertisingSetTxPower = QuuppaTag.getAdvertisingSetTxPower(this);
 
 		AdvertisingSetParameters primaryChannelAdvertisingSetParameters = new AdvertisingSetParameters.Builder()
-				.setTxPowerLevel(advertisingSetTxPower).setInterval(interval).build();
+				.setLegacyMode(true)
+				.setConnectable(true)
+				.setScannable(true)
+				.setInterval(interval)
+				.setTxPowerLevel(advertisingSetTxPower)
+				.build();
 
-		AdvertiseData advertiseData = new AdvertiseData.Builder().setIncludeTxPowerLevel(false)
+		// Neither txpower level nor device name doesn't fit in legacy mode with our manufacturer data
+		AdvertiseData advertiseData = new AdvertiseData.Builder()
+				.setIncludeTxPowerLevel(false)
+				.setIncludeDeviceName(false)
 				.addManufacturerData(0x00C7, bytes).build();
 
 		AdvertiseData scanResponse = null;
-
 		int maxExtendedAdvertisingEvents = 0;
-		// duration is 10ms per unit
-		// https://developer.android.com/reference/android/bluetooth/le/BluetoothLeAdvertiser#startAdvertisingSet(android.bluetooth.le.AdvertisingSetParameters,%20android.bluetooth.le.AdvertiseData,%20android.bluetooth.le.AdvertiseData,%20android.bluetooth.le.PeriodicAdvertisingParameters,%20android.bluetooth.le.AdvertiseData,%20int,%20int,%20android.bluetooth.le.AdvertisingSetCallback)
-		int duration = 0 ; // moving ? 0 : 2000; // never stop unless explicitly stopped
+		int duration = 0; 
 
 		try {
 			BluetoothLeAdvertiser bluetoothLeAdvertiser = QuuppaTag.getBluetoothLeAdvertiser(this);
-			Log.d(getClass().getSimpleName(), "startPeriodicAdvertisingSet");
+			Log.d(getClass().getSimpleName(), "startAdvertisingSet");
 			
 			bluetoothLeAdvertiser.startAdvertisingSet(primaryChannelAdvertisingSetParameters, advertiseData,
 					scanResponse, null, null, duration, maxExtendedAdvertisingEvents, advertisingSetCallback);
+
+			if (!BluetoothAdapter.getDefaultAdapter().isLeExtendedAdvertisingSupported()) {
+			    Log.e(getClass().getSimpleName(), "Extended advertising is not supported on this device.");
+			}
+			else Log.v(getClass().getSimpleName(), "Extended advertising is supported on this device.");
+			
 			advertisingStarted = true;
 		} catch (IllegalArgumentException iae) {
-			// This is ok, we may have had one running
-			Log.i(getClass().getSimpleName(),
-					"Attempted to start a new BLE advertising, but previous one is still running");
+			Log.e(getClass().getSimpleName(),
+					"Couldn't start advertising because: " + iae.getMessage());
 		} catch (QuuppaTagException e) {
 			sendBroadcast(new Intent(IntentAction.QT_BLE_NOT_ENABLED.name()));
 			return;

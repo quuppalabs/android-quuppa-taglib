@@ -210,7 +210,7 @@ public abstract class QuuppaTag {
 
     @Deprecated
     public static void startAdvertising(Context context, AdvertiseCallback callback, boolean moving) throws QuuppaTagException {
-    	startAdvertising(context, callback, moving);
+    	startAdvertising(context, callback, moving, AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY, AdvertiseSettings.ADVERTISE_TX_POWER_HIGH);
     }
     
     /**
