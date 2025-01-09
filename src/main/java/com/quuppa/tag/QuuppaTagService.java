@@ -136,7 +136,7 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 				Method method = getClass().getMethod("startForeground", new Class[] {int.class, Notification.class, int.class});
 				// We don't need location updates - yes RTLS produces location, but the app doesn't need it
 				// method.invoke(this, 1, notification, 8); // ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION 
-				method.invoke(this, 1, notification, 1073741824); // ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE 
+				method.invoke(this, 1, notification, 16); // ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE 
 			} catch (Exception e) {
 				// shouldn't fail
 				Log.v(QuuppaTagService.class.getSimpleName(), "startForeground failed because: " + e.getCause());
