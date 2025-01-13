@@ -23,7 +23,6 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
-import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.le.AdvertiseData;
 import android.bluetooth.le.AdvertisingSet;
 import android.bluetooth.le.AdvertisingSetCallback;
@@ -50,10 +49,6 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 	public static String NOTIFICATION_CHANNEL_NAME = "Quuppa Tag Notifications";
 
 	public static String NOTIFICATION_DEFAULT_TEXT = "Quuppa Tag active";
-
-	public enum IntentAction {
-		QT_SYSTEM_ERROR, QT_SYSTEM_EVENT, QT_BLE_NOT_ENABLED, QT_MOVING, QT_STATIONARY, QT_STARTED, QT_STOPPED, QT_STATIONARY_CHECK
-	};
 
 	private SensorManager sensorManager;
 	private Sensor accelerometer;
@@ -171,11 +166,15 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 
 		if (!isEnabled()) return START_NOT_STICKY;
 		
+		boolean wasRunning = running;
+		
 		if (!running) {
 			init();
 		}
 		// Especially QT_STATIONARY_CHECK
 		else if (intent.getAction() != null) adjustAdvertisingSchedule();
+		
+		if (wasRunning != running) sendBroadcast(new Intent(IntentAction.QT_STARTED.fqdn()));
 		return START_STICKY;
 	}
 	
@@ -204,7 +203,7 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 
 	private PendingIntent getStationaryAlarmIntent() {
 		Intent intent = new Intent(this, QuuppaTagService.class);
-		intent.setAction(IntentAction.QT_STATIONARY_CHECK.name());
+		intent.setAction(IntentAction.QT_STATIONARY_CHECK.fqdn());
 		return PendingIntent.getService(this, 1, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 	}
 
@@ -224,7 +223,7 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 			bluetoothLeAdvertiser.stopAdvertisingSet(advertisingSetCallback);
 			advertisingStarted = false;
 		} catch (QuuppaTagException e) {
-			sendBroadcast(new Intent(IntentAction.QT_BLE_NOT_ENABLED.name()));
+			sendBroadcast(new Intent(IntentAction.QT_BLE_NOT_ENABLED.fqdn()));
 			return;
 		}
 
@@ -238,7 +237,7 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 		} catch (QuuppaTagException e) {
 			// this should only fail in case of an IOException
 			e.printStackTrace();
-			sendBroadcast(new Intent(IntentAction.QT_SYSTEM_ERROR.name()));
+			sendBroadcast(new Intent(IntentAction.QT_SYSTEM_ERROR.fqdn()));
 			return;
 		}
 
@@ -274,17 +273,17 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 			bluetoothLeAdvertiser.startAdvertisingSet(primaryChannelAdvertisingSetParameters, advertiseData,
 					scanResponse, null, null, duration, maxExtendedAdvertisingEvents, advertisingSetCallback);
 
-			if (!BluetoothAdapter.getDefaultAdapter().isLeExtendedAdvertisingSupported()) {
-			    Log.e(getClass().getSimpleName(), "Extended advertising is not supported on this device.");
-			}
-			else Log.v(getClass().getSimpleName(), "Extended advertising is supported on this device.");
+//			if (!BluetoothAdapter.getDefaultAdapter().isLeExtendedAdvertisingSupported()) {
+//			    Log.e(getClass().getSimpleName(), "Extended advertising is not supported on this device.");
+//			}
+//			else Log.v(getClass().getSimpleName(), "Extended advertising is supported on this device.");
 			
 			advertisingStarted = true;
 		} catch (IllegalArgumentException iae) {
 			Log.e(getClass().getSimpleName(),
 					"Couldn't start advertising because: " + iae.getMessage());
 		} catch (QuuppaTagException e) {
-			sendBroadcast(new Intent(IntentAction.QT_BLE_NOT_ENABLED.name()));
+			sendBroadcast(new Intent(IntentAction.QT_BLE_NOT_ENABLED.fqdn()));
 			return;
 		}
 
@@ -293,6 +292,9 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 	@Override
 	public void onDestroy() {
 		Log.d(getClass().getSimpleName(), "service onDestroy()");
+		
+		if (running) sendBroadcast(new Intent(IntentAction.QT_STOPPED.fqdn()));
+		
 		running = false;
 		sensorManager.unregisterListener(this);
 

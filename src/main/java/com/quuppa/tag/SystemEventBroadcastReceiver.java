@@ -1,7 +1,5 @@
 package com.quuppa.tag;
 
-import com.quuppa.tag.QuuppaTagService.IntentAction;
-
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
