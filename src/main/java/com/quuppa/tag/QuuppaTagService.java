@@ -1,4 +1,4 @@
-// Copyright 2022 Quuppa Oy
+// Copyright 2025 Quuppa Oy
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -30,7 +30,6 @@ import android.bluetooth.le.AdvertisingSetParameters;
 import android.bluetooth.le.BluetoothLeAdvertiser;
 import android.content.Context;
 import android.content.Intent;
-import android.content.SharedPreferences;
 import android.graphics.drawable.Icon;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
@@ -50,6 +49,7 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 
 	public static String NOTIFICATION_DEFAULT_TEXT = "Quuppa Tag active";
 
+	private AlarmManager alarmManager;
 	private SensorManager sensorManager;
 	private Sensor accelerometer;
 	private PowerManager.WakeLock wakeLock;
@@ -62,7 +62,7 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 	// needed just to stop starting a new scan when service is going down
 	private volatile boolean running = false;
 
-	private static long STATIONARY_CHECK_INTERVAL = 1000L * 60;
+	private static long STATIONARY_CHECK_INTERVAL = 65000L;
 	
 	private boolean advertisingStarted;
 
@@ -98,6 +98,8 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 			advertisingStarted = false;
 		}
 	};
+
+	private boolean canScheduleExactAlarms;
 
 	@Override
 	public void onCreate() {
@@ -144,8 +146,23 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 		tagId = QuuppaTag.getOrInitTagId(this);
 		deviceType = QuuppaTag.getOrInitDeviceType(this);
 
+        alarmManager = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
+        if ((Build.VERSION.SDK_INT >= 31))
+			try {
+				Method canScheduleExactAlarmsMethod = AlarmManager.class.getMethod("canScheduleExactAlarms");
+				boolean canScheduleExactAlarms = false;
+				try {
+					canScheduleExactAlarms = (boolean) canScheduleExactAlarmsMethod.invoke(alarmManager);
+				} catch (Exception e) {} 
+				if (!canScheduleExactAlarms) {
+			        QuuppaTag.setServiceEnabled(this, false);
+					sendBroadcast(new Intent(IntentAction.QT_SCHEDULE_NOT_ENABLED.fqdn()));
+					return;
+				}
+			} catch (NoSuchMethodException e) {}
+        
 		lastMoved = System.currentTimeMillis();
-		
+        
 		sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
 		accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
 		sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL);
@@ -172,27 +189,31 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 			init();
 		}
 		// Especially QT_STATIONARY_CHECK
-		else if (intent.getAction() != null) adjustAdvertisingSchedule();
+		else if (intent.getAction() != null) {
+			// We use single exact intents so that they wouldn't get held back, always restart when we receive one
+			if (IntentAction.QT_STATIONARY_CHECK.fqdn().equals(intent.getAction())) startStationaryCheckAlarm();
+			adjustAdvertisingSchedule(true);
+		}
 		
 		if (wasRunning != running) sendBroadcast(new Intent(IntentAction.QT_STARTED.fqdn()));
 		return START_STICKY;
 	}
 	
 	private boolean isEnabled() {
-        SharedPreferences sharedPrefs = getSharedPreferences(
-                QuuppaTag.PREFS, Context.MODE_PRIVATE);
-        return sharedPrefs.getBoolean(QuuppaTag.PREFS_ENABLED, false);
+		return QuuppaTag.isServiceEnabled(this);
 	}
 
-	protected void adjustAdvertisingSchedule() {
+	protected void adjustAdvertisingSchedule(boolean fromStationaryCheck) {
 		if (!running) return;
 		
 		boolean wasMoving = moving;
 		moving = (System.currentTimeMillis() - lastMoved < STATIONARY_TRESHOLD_MS);
+		if (fromStationaryCheck && moving) startStationaryCheckAlarm();
 		
 		if (!advertisingStarted)
 			startAdvertisingSet();
 		else if (moving != wasMoving) {
+			if (!fromStationaryCheck && moving) startStationaryCheckAlarm();
 			Log.v(getClass().getSimpleName(), "adjustAdvertisingSchedule() changed moving to " + moving);
 			stopAdvertisingSet();
 			startAdvertisingSet();
@@ -206,8 +227,16 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 	}
 
 	private void startStationaryCheckAlarm() {
-		getSystemService(AlarmManager.class).setRepeating(AlarmManager.RTC_WAKEUP, System.currentTimeMillis(),
-				STATIONARY_CHECK_INTERVAL, getStationaryAlarmIntent());
+// The problem with repeating alarms is that they are not exact, and they can be held back by the system		
+//		getSystemService(AlarmManager.class).setRepeating(AlarmManager.RTC_WAKEUP, System.currentTimeMillis(),
+//				STATIONARY_CHECK_INTERVAL, getStationaryAlarmIntent());
+		if (alarmManager == null) {
+			// shouldn't happen
+			Log.e(getClass().getSimpleName(), "Couldn't start stationary check alarm, alarm manager is null");
+			return;
+		}
+		getSystemService(AlarmManager.class).setExact(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + STATIONARY_CHECK_INTERVAL,
+				getStationaryAlarmIntent());
 	}
 
 	private void stopStationaryCheckAlarm() {
@@ -217,7 +246,7 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 	protected void stopAdvertisingSet() {
 		try {
 			BluetoothLeAdvertiser bluetoothLeAdvertiser = QuuppaTag.getBluetoothLeAdvertiser(this);
-			Log.d(getClass().getSimpleName(), "stopPeriodicAdvertisingSet");
+			Log.d(getClass().getSimpleName(), "stopAdvertisingSet");
 			bluetoothLeAdvertiser.stopAdvertisingSet(advertisingSetCallback);
 			advertisingStarted = false;
 		} catch (QuuppaTagException e) {
@@ -294,7 +323,7 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 		if (running) sendBroadcast(new Intent(IntentAction.QT_STOPPED.fqdn()));
 		
 		running = false;
-		sensorManager.unregisterListener(this);
+		if (sensorManager != null) sensorManager.unregisterListener(this);
 
 		if (advertisingStarted) stopAdvertisingSet();
 		stopStationaryCheckAlarm();
@@ -345,7 +374,7 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 			if (accel > SHAKE_THRESHOLD) {
 				Log.v(getClass().getSimpleName(), "Moved, was moving " + moving);
 				lastMoved = System.currentTimeMillis();
-				if (!moving) adjustAdvertisingSchedule();
+				if (!moving) adjustAdvertisingSchedule(false);
 			}
 		}
 	}
