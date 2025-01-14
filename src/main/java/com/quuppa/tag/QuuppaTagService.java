@@ -187,15 +187,13 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 	protected void adjustAdvertisingSchedule() {
 		if (!running) return;
 		
-		System.out.println("adjustAdvertisingSchedule(), moving " + moving + ", periodicAdvertisingStarted "
-				+ advertisingStarted);
-		
 		boolean wasMoving = moving;
 		moving = (System.currentTimeMillis() - lastMoved < STATIONARY_TRESHOLD_MS);
 		
 		if (!advertisingStarted)
 			startAdvertisingSet();
 		else if (moving != wasMoving) {
+			Log.v(getClass().getSimpleName(), "adjustAdvertisingSchedule() changed moving to " + moving);
 			stopAdvertisingSet();
 			startAdvertisingSet();
 		}
@@ -354,7 +352,7 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 
 	@Override
 	public void onAccuracyChanged(Sensor sensor, int accuracy) {
-		System.out.println("Accl accuracy changed " + accuracy);
+		Log.d(getClass().getSimpleName(), "Accelerator accuracy changed " + accuracy);
 	}
 
 	@Override
