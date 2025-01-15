@@ -41,6 +41,10 @@ startForegroundService(tagServiceIntent);
 
 You should first call `QuuppaTag.setServiceEnabled(context, true);` to set the service in enabled state. This is so that service can automatically start on system events but only acquires the wake lock and starts emitting BLE advertisement packets when in enable state. The class [QuuppaTag](https://github.com/quuppalabs/android-quuppa-taglib/blob/main/src/main/java/com/quuppa/tag/QuuppaTag.java) also contains getters and setters for other parameters, such as a the tag ID and [AdvertisingSet TX power](https://developer.android.com/reference/android/bluetooth/le/AdvertisingSetParameters). The default tag ID (based on [Secure.ANDROID_ID](https://developer.android.com/reference/android/provider/Settings.Secure#ANDROID_ID) if available) is guaranteed to stay constant for the lifetime of the application but you can also supply your own ID if you so prefer.
 
+## Non-RTLS use
+
+This library is really not so useful outside Real-Time Locationing System (RTLS) scope. Even so, it may give you ideas for creating your own never ending service that can ben run on modern Android devices (because Google has been tightening rules around long running service all the time). In short, it's a combination of implementing a frontend service (which this library does), holding a wake lock and disabling battery optimizations - look for examples in the demo app for permission requests. Feel free to explore the source code.
+
 ## License
 
 Licensed under Apache 2.0 License.
