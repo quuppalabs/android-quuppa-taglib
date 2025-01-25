@@ -66,40 +66,43 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 	
 	private boolean advertisingStarted;
 
-	private String tagId;
 	private DeviceType deviceType;
 	private Class<? extends Activity> notifiedActivityClass;
 
-	private AdvertisingSetCallback advertisingSetCallback = new AdvertisingSetCallback() {
-
-		@Override
-		public void onAdvertisingSetStarted(AdvertisingSet advertisingSet, int txPower, int status) {
-			Log.v(QuuppaTagService.class.getSimpleName(), "onAdvertisingSetStarted() status " + status + ", moving " + moving);
-		}
-
-		@Override
-		public void onAdvertisingEnabled(AdvertisingSet advertisingSet, boolean enable, int status) {
-			Log.v(QuuppaTagService.class.getSimpleName(), "onAdvertisingEnabled(), enable " + enable);
-		}
-
-		@Override
-		public void onAdvertisingDataSet(AdvertisingSet advertisingSet, int status) {
-			Log.v(QuuppaTagService.class.getSimpleName(), "onAdvertisingDataSet(), status " + status);
-		}
-
-		@Override
-		public void onPeriodicAdvertisingEnabled(AdvertisingSet advertisingSet, boolean enable, int status) {
-			Log.v(QuuppaTagService.class.getSimpleName(), "onPeriodicAdvertisingEnabled(), enable " + enable);
-		}
-
-		@Override
-		public void onAdvertisingSetStopped(AdvertisingSet advertisingSet) {
-			Log.v(QuuppaTagService.class.getSimpleName(), "onAdvertisingSetStopped()");
-			advertisingStarted = false;
-		}
-	};
-
+	private AdvertisingSetCallback advertisingSetCallback = createAdvertisingSetCallback();
 	private boolean canScheduleExactAlarms;
+	
+	private AdvertisingSetCallback createAdvertisingSetCallback() {
+		return new AdvertisingSetCallback() {
+			@Override
+			public void onAdvertisingSetStarted(AdvertisingSet advertisingSet, int txPower, int status) {
+				Log.v(QuuppaTagService.class.getSimpleName(),
+						"onAdvertisingSetStarted() status " + status + ", moving " + moving);
+				advertisingStarted = true;
+			}
+
+			@Override
+			public void onAdvertisingEnabled(AdvertisingSet advertisingSet, boolean enable, int status) {
+				Log.v(QuuppaTagService.class.getSimpleName(), "onAdvertisingEnabled(), enable " + enable);
+			}
+
+			@Override
+			public void onAdvertisingDataSet(AdvertisingSet advertisingSet, int status) {
+				Log.v(QuuppaTagService.class.getSimpleName(), "onAdvertisingDataSet(), status " + status);
+			}
+
+			@Override
+			public void onPeriodicAdvertisingEnabled(AdvertisingSet advertisingSet, boolean enable, int status) {
+				Log.v(QuuppaTagService.class.getSimpleName(), "onPeriodicAdvertisingEnabled(), enable " + enable);
+			}
+
+			@Override
+			public void onAdvertisingSetStopped(AdvertisingSet advertisingSet) {
+				Log.v(QuuppaTagService.class.getSimpleName(), "onAdvertisingSetStopped()");
+				advertisingStarted = false;
+			}
+		};
+	}
 
 	@Override
 	public void onCreate() {
@@ -143,7 +146,6 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 	}
 	
 	private void init() {
-		tagId = QuuppaTag.getOrInitTagId(this);
 		deviceType = QuuppaTag.getOrInitDeviceType(this);
 
         alarmManager = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
@@ -156,7 +158,7 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 				} catch (Exception e) {} 
 				if (!canScheduleExactAlarms) {
 			        QuuppaTag.setServiceEnabled(this, false);
-					sendBroadcast(new Intent(IntentAction.QT_SCHEDULE_NOT_ENABLED.fqdn()));
+					sendBroadcast(new Intent(IntentAction.QT_SCHEDULE_NOT_ENABLED.fullyQualifiedName()));
 					return;
 				}
 			} catch (NoSuchMethodException e) {}
@@ -190,12 +192,11 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 		}
 		// Especially QT_STATIONARY_CHECK
 		else if (intent.getAction() != null) {
-			// We use single exact intents so that they wouldn't get held back, always restart when we receive one
-			if (IntentAction.QT_STATIONARY_CHECK.fqdn().equals(intent.getAction())) startStationaryCheckAlarm();
-			adjustAdvertisingSchedule(true);
+			IntentAction intentAction = IntentAction.fullyQualifiedValueOf(intent.getAction());
+			adjustAdvertisingSchedule(intentAction);
 		}
 		
-		if (wasRunning != running) sendBroadcast(new Intent(IntentAction.QT_STARTED.fqdn()));
+		if (wasRunning != running) sendBroadcast(new Intent(IntentAction.QT_STARTED.fullyQualifiedName()));
 		return START_STICKY;
 	}
 	
@@ -203,18 +204,24 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 		return QuuppaTag.isServiceEnabled(this);
 	}
 
-	protected void adjustAdvertisingSchedule(boolean fromStationaryCheck) {
+	protected void adjustAdvertisingSchedule(IntentAction intentAction) {
 		if (!running) return;
 		
 		boolean wasMoving = moving;
 		moving = (System.currentTimeMillis() - lastMoved < STATIONARY_TRESHOLD_MS);
-		if (fromStationaryCheck && moving) startStationaryCheckAlarm();
+		// from periodic check, always schedule next while moving
+		if (IntentAction.QT_STATIONARY_CHECK.equals(intentAction) && moving) startStationaryCheckAlarm();
 		
 		if (!advertisingStarted)
 			startAdvertisingSet();
 		else if (moving != wasMoving) {
-			if (!fromStationaryCheck && moving) startStationaryCheckAlarm();
+			// moved the first time after being stationary, start stationary checks
+			if (IntentAction.QT_MOVING.equals(intentAction) && moving) startStationaryCheckAlarm();
 			Log.v(getClass().getSimpleName(), "adjustAdvertisingSchedule() changed moving to " + moving);
+			stopAdvertisingSet();
+			startAdvertisingSet();
+		}
+		else if (IntentAction.QT_RESTART.equals(intentAction)) {
 			stopAdvertisingSet();
 			startAdvertisingSet();
 		}
@@ -222,7 +229,7 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 
 	private PendingIntent getStationaryAlarmIntent() {
 		Intent intent = new Intent(this, QuuppaTagService.class);
-		intent.setAction(IntentAction.QT_STATIONARY_CHECK.fqdn());
+		intent.setAction(IntentAction.QT_STATIONARY_CHECK.fullyQualifiedName());
 		return PendingIntent.getService(this, 1, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 	}
 
@@ -250,7 +257,7 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 			bluetoothLeAdvertiser.stopAdvertisingSet(advertisingSetCallback);
 			advertisingStarted = false;
 		} catch (QuuppaTagException e) {
-			sendBroadcast(new Intent(IntentAction.QT_BLE_NOT_ENABLED.fqdn()));
+			sendBroadcast(new Intent(IntentAction.QT_BLE_NOT_ENABLED.fullyQualifiedName()));
 			return;
 		}
 
@@ -259,12 +266,13 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 	// never throw exception but send error broadcasts that can be listened to
 	protected void startAdvertisingSet() {
 		byte[] bytes = null;
+		String tagId = QuuppaTag.getOrInitTagId(this);
 		try {
 			bytes = QuuppaTag.createQuuppaDFPacketAdvertiseData(tagId, deviceType, moving);
 		} catch (QuuppaTagException e) {
 			// this should only fail in case of an IOException
 			e.printStackTrace();
-			sendBroadcast(new Intent(IntentAction.QT_SYSTEM_ERROR.fqdn()));
+			sendBroadcast(new Intent(IntentAction.QT_SYSTEM_ERROR.fullyQualifiedName()));
 			return;
 		}
 
@@ -297,20 +305,14 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 			BluetoothLeAdvertiser bluetoothLeAdvertiser = QuuppaTag.getBluetoothLeAdvertiser(this);
 			Log.d(getClass().getSimpleName(), "startAdvertisingSet");
 			
+			advertisingSetCallback = createAdvertisingSetCallback();
 			bluetoothLeAdvertiser.startAdvertisingSet(primaryChannelAdvertisingSetParameters, advertiseData,
 					scanResponse, null, null, duration, maxExtendedAdvertisingEvents, advertisingSetCallback);
-
-//			if (!BluetoothAdapter.getDefaultAdapter().isLeExtendedAdvertisingSupported()) {
-//			    Log.e(getClass().getSimpleName(), "Extended advertising is not supported on this device.");
-//			}
-//			else Log.v(getClass().getSimpleName(), "Extended advertising is supported on this device.");
-			
-			advertisingStarted = true;
 		} catch (IllegalArgumentException iae) {
 			Log.e(getClass().getSimpleName(),
 					"Couldn't start advertising because: " + iae.getMessage());
 		} catch (QuuppaTagException e) {
-			sendBroadcast(new Intent(IntentAction.QT_BLE_NOT_ENABLED.fqdn()));
+			sendBroadcast(new Intent(IntentAction.QT_BLE_NOT_ENABLED.fullyQualifiedName()));
 			return;
 		}
 
@@ -320,7 +322,7 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 	public void onDestroy() {
 		Log.d(getClass().getSimpleName(), "service onDestroy()");
 		
-		if (running) sendBroadcast(new Intent(IntentAction.QT_STOPPED.fqdn()));
+		if (running) sendBroadcast(new Intent(IntentAction.QT_STOPPED.fullyQualifiedName()));
 		
 		running = false;
 		if (sensorManager != null) sensorManager.unregisterListener(this);
@@ -374,7 +376,7 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 			if (accel > SHAKE_THRESHOLD) {
 				Log.v(getClass().getSimpleName(), "Moved, was moving " + moving);
 				lastMoved = System.currentTimeMillis();
-				if (!moving) adjustAdvertisingSchedule(false);
+				if (!moving) adjustAdvertisingSchedule(IntentAction.QT_MOVING);
 			}
 		}
 	}

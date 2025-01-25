@@ -26,6 +26,7 @@ import android.bluetooth.le.AdvertiseSettings;
 import android.bluetooth.le.AdvertisingSetParameters;
 import android.bluetooth.le.BluetoothLeAdvertiser;
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.SharedPreferences.Editor;
 import android.provider.Settings.Secure;
@@ -244,5 +245,23 @@ public abstract class QuuppaTag {
 			throw new QuuppaTagException("QuuppaTag is not controllable because Bluetooth is not enabled");
 		return btAdapter.getBluetoothLeAdvertiser();
 	}
+	
+	public static void restart(Context context) {
+        setServiceEnabled(context, true);
+        Intent intent = new Intent(context, QuuppaTagService.class);
+        intent.setAction(IntentAction.QT_RESTART.fullyQualifiedName());
+        context.startForegroundService(intent);
+	}
+	
+	public static void start(Context context) {
+        setServiceEnabled(context, true);
+        context.startForegroundService(new Intent(context, QuuppaTagService.class));
+	}
+	
+	public static void stop(Context context) {
+        setServiceEnabled(context, false);
+        context.stopService(new Intent(context, QuuppaTagService.class));
+	}
+	
 }
 

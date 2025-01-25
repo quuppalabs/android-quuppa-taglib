@@ -19,7 +19,7 @@ import android.content.Intent;
 public class SystemEventBroadcastReceiver extends BroadcastReceiver {
     public void onReceive(Context context, Intent intent) {
         Intent serviceIntent = new Intent(context, QuuppaTagService.class);
-        serviceIntent.setAction(IntentAction.QT_SYSTEM_EVENT.fqdn());
+        serviceIntent.setAction(IntentAction.QT_SYSTEM_EVENT.fullyQualifiedName());
         context.startService(serviceIntent);
     }
 }	

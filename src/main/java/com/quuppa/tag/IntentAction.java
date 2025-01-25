@@ -13,9 +13,17 @@
 package com.quuppa.tag;
 
 public enum IntentAction {
-	QT_SYSTEM_ERROR, QT_SYSTEM_EVENT, QT_SCHEDULE_NOT_ENABLED, QT_BLE_NOT_ENABLED, QT_MOVING, QT_STATIONARY, QT_STARTED, QT_STOPPED, QT_STATIONARY_CHECK;
+	QT_SYSTEM_ERROR, QT_SYSTEM_EVENT, QT_SCHEDULE_NOT_ENABLED, QT_BLE_NOT_ENABLED, QT_MOVING, QT_STATIONARY, QT_STARTED, QT_STOPPED, QT_STATIONARY_CHECK, QT_RESTART;
 	
-	public String fqdn() {
+	public String fullyQualifiedName() {
 		return IntentAction.class.getName() + "." + name();
+	}
+	
+	public static IntentAction fullyQualifiedValueOf(String value) {
+		if (!value.startsWith(IntentAction.class.getName() + ".") ) {
+			throw new IllegalArgumentException("Value is not fully qualified with " + IntentAction.class.getName());
+		}
+		value = value.substring(IntentAction.class.getName().length() + 1);
+		return IntentAction.valueOf(value);
 	}
 }
