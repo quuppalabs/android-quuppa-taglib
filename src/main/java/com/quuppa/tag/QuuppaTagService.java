@@ -309,7 +309,7 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 	
 	private AdvertiseData createAdvertiseData() throws QuuppaTagException {
 		String tagId = QuuppaTag.getOrInitTagId(this);
-		byte[] bytes = QuuppaTag.createQuuppaDFPacketAdvertiseData(tagId, deviceType, moving);
+		byte[] bytes = QuuppaTag.createQuuppaDFPacketAdvertiseData(tagId, deviceType, advertisingSetParameters);
 		// Neither txpower level nor device name doesn't fit in legacy mode with our manufacturer data
 		return new AdvertiseData.Builder()
 				.setIncludeTxPowerLevel(false)
@@ -319,16 +319,6 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 
 	// never throw exception but send error broadcasts that can be listened to
 	protected void startAdvertisingSet() {
-		AdvertiseData advertiseData = null;
-		try {
-			advertiseData = createAdvertiseData();
-		} catch (QuuppaTagException e) {
-			// this should only fail in case of an IOException
-			e.printStackTrace();
-			sendBroadcast(new Intent(IntentAction.QT_SYSTEM_ERROR.fullyQualifiedName()));
-			return;
-		}
-
 		// primary channel interval is 0.625ms per unit,
 		// https://developer.android.com/reference/android/bluetooth/le/AdvertisingSetParameters.Builder#setInterval(int)
 		// ~3Hz / 0.1 Hz
@@ -344,6 +334,16 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 				.setTxPowerLevel(advertisingSetTxPower)
 				.build();
 		
+		AdvertiseData advertiseData = null;
+		try {
+			advertiseData = createAdvertiseData();
+		} catch (QuuppaTagException e) {
+			// this should only fail in case of an IOException
+			e.printStackTrace();
+			sendBroadcast(new Intent(IntentAction.QT_SYSTEM_ERROR.fullyQualifiedName()));
+			return;
+		}
+
 		AdvertiseData scanResponse = null;
 		int maxExtendedAdvertisingEvents = 0;
 		int duration = 0; 
