@@ -62,7 +62,15 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 	// needed just to stop starting a new scan when service is going down
 	private volatile boolean running = false;
 
-	private static long STATIONARY_CHECK_INTERVAL = 65000L;
+	private static long STATIONARY_CHECK_DELAY = 65000L;
+	private static long ADVERTISINGSET_ADJUST_DELAY = 3000L;
+	
+	// primary channel interval is 0.625ms per unit,
+	// https://developer.android.com/reference/android/bluetooth/le/AdvertisingSetParameters.Builder#setInterval(int)
+	// ~3Hz  
+	private static int ADVERTISING_INTERVAL_MOVING = 533;
+	// 0.1 Hz
+	private static int ADVERTISING_INTERVAL_STATIONARY = 16000;
 	
 	private boolean advertisingStarted;
 
@@ -71,6 +79,10 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 
 	private AdvertisingSetCallback advertisingSetCallback = createAdvertisingSetCallback();
 	private boolean canScheduleExactAlarms;
+
+	private volatile AdvertisingSet advertisingSet;
+
+	private AdvertisingSetParameters advertisingSetParameters;
 	
 	private AdvertisingSetCallback createAdvertisingSetCallback() {
 		return new AdvertisingSetCallback() {
@@ -78,6 +90,7 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 			public void onAdvertisingSetStarted(AdvertisingSet advertisingSet, int txPower, int status) {
 				Log.v(QuuppaTagService.class.getSimpleName(),
 						"onAdvertisingSetStarted() status " + status + ", moving " + moving);
+				QuuppaTagService.this.advertisingSet = advertisingSet;
 				advertisingStarted = true;
 			}
 
@@ -170,7 +183,7 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 		sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL);
 		
 		startAdvertisingSet();
-		startStationaryCheckAlarm();
+		startStationaryCheckAlarm(STATIONARY_CHECK_DELAY);
 
 		// Acquire wake lock
 		PowerManager powerManager = (PowerManager) getSystemService(Context.POWER_SERVICE);
@@ -210,18 +223,49 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 		boolean wasMoving = moving;
 		moving = (System.currentTimeMillis() - lastMoved < STATIONARY_TRESHOLD_MS);
 		// from periodic check, always schedule next while moving
-		if (IntentAction.QT_STATIONARY_CHECK.equals(intentAction) && moving) startStationaryCheckAlarm();
+		if (IntentAction.QT_STATIONARY_CHECK.equals(intentAction) && moving) startStationaryCheckAlarm(STATIONARY_CHECK_DELAY);
 		
 		if (!advertisingStarted)
 			startAdvertisingSet();
 		else if (moving != wasMoving) {
-			// moved the first time after being stationary, start stationary checks
-			if (IntentAction.QT_MOVING.equals(intentAction) && moving) startStationaryCheckAlarm();
 			Log.v(getClass().getSimpleName(), "adjustAdvertisingSchedule() changed moving to " + moving);
+			// moved the first time after being stationary, start stationary checks
+			if (IntentAction.QT_MOVING.equals(intentAction) && moving) {
+				startStationaryCheckAlarm(STATIONARY_CHECK_DELAY);
+				stopAdvertisingSet();
+				startAdvertisingSet();
+			}
+			else if (advertisingSet != null && IntentAction.QT_STATIONARY_CHECK.equals(intentAction) && !moving) {
+				// first detected as stopped after moving, adjust the advertising data to send stationary
+				// for a few secs, then switch to stationary
+				startStationaryCheckAlarm(ADVERTISINGSET_ADJUST_DELAY);
+				
+				AdvertiseData advertiseData = null;
+				try {
+					advertiseData = createAdvertiseData();
+				} catch (QuuppaTagException e) {
+					// this should only fail in case of an IOException
+					e.printStackTrace();
+					sendBroadcast(new Intent(IntentAction.QT_SYSTEM_ERROR.fullyQualifiedName()));
+					return;
+				}
+				AdvertisingSet advertisingSet = this.advertisingSet;
+				// these should not be null but in case they were, just restart advertising immediately
+				if (advertiseData != null & advertisingSet != null) advertisingSet.setAdvertisingData(advertiseData);
+				else {
+					stopAdvertisingSet();
+					startAdvertisingSet();
+				}
+			}
+		}
+		else if (IntentAction.QT_RESTART.equals(intentAction)) {
 			stopAdvertisingSet();
 			startAdvertisingSet();
 		}
-		else if (IntentAction.QT_RESTART.equals(intentAction)) {
+		else if (!moving && advertisingSetParameters.getInterval() < ADVERTISING_INTERVAL_STATIONARY) {
+			// We are already stationary but have not yet adjusted to the lower advertising rate
+			
+			// Do not start any StationaryCheckAlarm anymore, just rely on the accelerator to adjust the advertising rate
 			stopAdvertisingSet();
 			startAdvertisingSet();
 		}
@@ -233,7 +277,7 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 		return PendingIntent.getService(this, 1, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
 	}
 
-	private void startStationaryCheckAlarm() {
+	private void startStationaryCheckAlarm(long delay) {
 // The problem with repeating alarms is that they are not exact, and they can be held back by the system		
 //		getSystemService(AlarmManager.class).setRepeating(AlarmManager.RTC_WAKEUP, System.currentTimeMillis(),
 //				STATIONARY_CHECK_INTERVAL, getStationaryAlarmIntent());
@@ -242,7 +286,7 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 			Log.e(getClass().getSimpleName(), "Couldn't start stationary check alarm, alarm manager is null");
 			return;
 		}
-		getSystemService(AlarmManager.class).setExact(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + STATIONARY_CHECK_INTERVAL,
+		getSystemService(AlarmManager.class).setExact(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + delay,
 				getStationaryAlarmIntent());
 	}
 
@@ -262,13 +306,22 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 		}
 
 	}
+	
+	private AdvertiseData createAdvertiseData() throws QuuppaTagException {
+		String tagId = QuuppaTag.getOrInitTagId(this);
+		byte[] bytes = QuuppaTag.createQuuppaDFPacketAdvertiseData(tagId, deviceType, moving);
+		// Neither txpower level nor device name doesn't fit in legacy mode with our manufacturer data
+		return new AdvertiseData.Builder()
+				.setIncludeTxPowerLevel(false)
+				.setIncludeDeviceName(false)
+				.addManufacturerData(0x00C7, bytes).build();
+	}
 
 	// never throw exception but send error broadcasts that can be listened to
 	protected void startAdvertisingSet() {
-		byte[] bytes = null;
-		String tagId = QuuppaTag.getOrInitTagId(this);
+		AdvertiseData advertiseData = null;
 		try {
-			bytes = QuuppaTag.createQuuppaDFPacketAdvertiseData(tagId, deviceType, moving);
+			advertiseData = createAdvertiseData();
 		} catch (QuuppaTagException e) {
 			// this should only fail in case of an IOException
 			e.printStackTrace();
@@ -279,24 +332,18 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 		// primary channel interval is 0.625ms per unit,
 		// https://developer.android.com/reference/android/bluetooth/le/AdvertisingSetParameters.Builder#setInterval(int)
 		// ~3Hz / 0.1 Hz
-		int interval = moving ? 533 : 16000;
+		int interval = moving ? ADVERTISING_INTERVAL_MOVING : ADVERTISING_INTERVAL_STATIONARY;
 		
 		int advertisingSetTxPower = QuuppaTag.getAdvertisingSetTxPower(this);
 
-		AdvertisingSetParameters primaryChannelAdvertisingSetParameters = new AdvertisingSetParameters.Builder()
+		advertisingSetParameters = new AdvertisingSetParameters.Builder()
 				.setLegacyMode(true)
 				.setConnectable(true)
 				.setScannable(true)
 				.setInterval(interval)
 				.setTxPowerLevel(advertisingSetTxPower)
 				.build();
-
-		// Neither txpower level nor device name doesn't fit in legacy mode with our manufacturer data
-		AdvertiseData advertiseData = new AdvertiseData.Builder()
-				.setIncludeTxPowerLevel(false)
-				.setIncludeDeviceName(false)
-				.addManufacturerData(0x00C7, bytes).build();
-
+		
 		AdvertiseData scanResponse = null;
 		int maxExtendedAdvertisingEvents = 0;
 		int duration = 0; 
@@ -306,7 +353,7 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 			Log.d(getClass().getSimpleName(), "startAdvertisingSet");
 			
 			advertisingSetCallback = createAdvertisingSetCallback();
-			bluetoothLeAdvertiser.startAdvertisingSet(primaryChannelAdvertisingSetParameters, advertiseData,
+			bluetoothLeAdvertiser.startAdvertisingSet(advertisingSetParameters, advertiseData,
 					scanResponse, null, null, duration, maxExtendedAdvertisingEvents, advertisingSetCallback);
 		} catch (IllegalArgumentException iae) {
 			Log.e(getClass().getSimpleName(),
