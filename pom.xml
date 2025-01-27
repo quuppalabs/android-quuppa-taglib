@@ -4,7 +4,7 @@
 	<artifactId>android-quuppa-taglib</artifactId>
 	<packaging>jar</packaging>
 	<name>Quuppa tag emulation library for Android</name>
-	<version>2.0.9</version>
+	<version>2.0.10-SNAPSHOT</version>
 	<description>Quuppa tag emulation library for Android</description>
 	<url>https://github.com/quuppalabs/android-quuppa-taglib</url>
 
@@ -31,7 +31,7 @@
 	
 	<scm>
 		<connection>scm:git:git@github.com:quuppalabs/android-quuppa-taglib.git</connection>
-		<tag>android-quuppa-taglib-2.0.9</tag>
+		<tag>android-quuppa-taglib-2.0.7</tag>
 		<url>https://github.com/quuppalabs/android-quuppa-taglib</url>
 	</scm>
 	
