@@ -161,7 +161,8 @@ public abstract class QuuppaTag {
         byte[] bytes = new byte[]{
                 (byte) 0x01, // Quuppa Packet ID
                 deviceType.type, // Device Type (0x21 = android smartphone, 0x22 = android tablet)
-                moving ? (byte) 0x1D : (byte) 0x1C, // Simplified Android emulation payload header (0x1D = moving at walking speed, 0x1C = stationary), high tx power
+                // moving ? (byte) 0x1D : (byte) 0x1C, // Simplified Android emulation payload header - 0x1D = moving at walking speed, 0x1C = stationary + reserve for Android max tx power
+                moving ? (byte)	0x19 : (byte) 0x18, // Simplified Android emulation payload header - 0x19 = moving at walking speed, 0x13 = stationary + Android high tx power maps to ~0 dBm Quuppa Tag
                 (byte) 0x01, (byte) 0x02, (byte) 0x03, (byte) 0x04, (byte) 0x05, (byte) 0x06, // Quuppa Address payload, will be replaced shortly...
                 (byte) 0xb4, // checksum, calculated later
                 (byte) 0x67, (byte) 0xF7, (byte) 0xDB, (byte) 0x34, (byte) 0xC4, (byte) 0x03, (byte) 0x8E, (byte) 0x5C, (byte) 0x0B, (byte) 0xAA, (byte) 0x97, (byte) 0x30, (byte) 0x56, (byte) 0xE6 // DF field, 14 octets
