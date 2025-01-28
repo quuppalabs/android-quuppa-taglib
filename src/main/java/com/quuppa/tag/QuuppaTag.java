@@ -76,7 +76,7 @@ public abstract class QuuppaTag {
      * @return constructed byte array
      * @throws QuuppaTagException 
      */
-    protected static byte[] createQuuppaDFPacketAdvertiseData(String tagID, DeviceType deviceType, AdvertisingSetParameters advertisingSetParameters) throws QuuppaTagException {
+    protected static byte[] createQuuppaDFPacketAdvertiseData(String tagID, DeviceType deviceType, AdvertisingSetParameters advertisingSetParameters, boolean moving) throws QuuppaTagException {
         // Please see the 'Specification of Quuppa Tag Emulation using Bluetooth Wireless Technology' -document for details
 
     	// simplified example with full power
@@ -111,10 +111,12 @@ public abstract class QuuppaTag {
 		//		| 10					|	> =7 … 14 Hz											| < 229 			|
 		//		| 11					|	>= 15 Hz												| < 107				|
 		
-		if (interval <= 107) header |= 3; // 15 Hz
+		// QPE interprets anything with less than 0.2 Hz as stationary device, so send that regardless of true rate
+		if (!moving) header |= 0; // < 1 Hz
+		else if (interval <= 107) header |= 3; // 15 Hz
 		else if (interval <= 229) header |= 2; // 7-14 Hz
-		else if (interval <= 1600) header |= 1; // 1-6 Hz
-		else header |= 0; // < 1 Hz
+		// else if (interval <= 1600) header |= 1; // 1-6 Hz
+		else header |= 1; // send slow moving 1-6 Hz as default
 		
         byte[] bytes = new byte[]{
                 (byte) 0x01, // Quuppa Packet ID

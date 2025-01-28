@@ -63,7 +63,7 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 	private volatile boolean running = false;
 
 	private static long STATIONARY_CHECK_DELAY = 65000L;
-	private static long ADVERTISINGSET_ADJUST_DELAY = 3000L;
+	private static long ADVERTISINGSET_ADJUST_DELAY = 5000L;
 	
 	// primary channel interval is 0.625ms per unit,
 	// https://developer.android.com/reference/android/bluetooth/le/AdvertisingSetParameters.Builder#setInterval(int)
@@ -309,7 +309,7 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 	
 	private AdvertiseData createAdvertiseData() throws QuuppaTagException {
 		String tagId = QuuppaTag.getOrInitTagId(this);
-		byte[] bytes = QuuppaTag.createQuuppaDFPacketAdvertiseData(tagId, deviceType, advertisingSetParameters);
+		byte[] bytes = QuuppaTag.createQuuppaDFPacketAdvertiseData(tagId, deviceType, advertisingSetParameters, moving);
 		// Neither txpower level nor device name doesn't fit in legacy mode with our manufacturer data
 		return new AdvertiseData.Builder()
 				.setIncludeTxPowerLevel(false)
