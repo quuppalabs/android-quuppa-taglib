@@ -41,8 +41,6 @@ import android.os.PowerManager;
 import android.util.Log;
 
 public class QuuppaTagService extends Service implements SensorEventListener {
-	public static long STATIONARY_TRESHOLD_MS = 60000L;
-	
 	public static Icon ICON;
 	public static String NOTIFICATION_CHANNEL_ID = "QuuppaTagNotification";
 	public static String NOTIFICATION_CHANNEL_NAME = "Quuppa Tag Notifications";
@@ -62,15 +60,16 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 	// needed just to stop starting a new scan when service is going down
 	private volatile boolean running = false;
 
-	private static long STATIONARY_CHECK_DELAY = 65000L;
+	public static long STATIONARY_TRESHOLD_MS = 20000L;
+	private static long STATIONARY_CHECK_DELAY = STATIONARY_TRESHOLD_MS + 5000L;
 	private static long ADVERTISINGSET_ADJUST_DELAY = 5000L;
 	
 	// primary channel interval is 0.625ms per unit,
 	// https://developer.android.com/reference/android/bluetooth/le/AdvertisingSetParameters.Builder#setInterval(int)
-	// ~3Hz  
-	private static int ADVERTISING_INTERVAL_MOVING = 533;
-	// 0.1 Hz
-	private static int ADVERTISING_INTERVAL_STATIONARY = 16000;
+	// ~3Hz -> 533
+	private static int ADVERTISING_INTERVAL_MOVING = AdvertisingSetParameters.INTERVAL_LOW; // ~5hZ
+	// 0.1 Hz -> 16000
+	private static int ADVERTISING_INTERVAL_STATIONARY = AdvertisingSetParameters.INTERVAL_HIGH;
 	
 	private boolean advertisingStarted;
 
@@ -309,7 +308,7 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 	
 	private AdvertiseData createAdvertiseData() throws QuuppaTagException {
 		String tagId = QuuppaTag.getOrInitTagId(this);
-		byte[] bytes = QuuppaTag.createQuuppaDFPacketAdvertiseData(tagId, deviceType, advertisingSetParameters, moving);
+		byte[] bytes = QuuppaTag.createQuuppaDFPacketAdvertiseData(tagId, deviceType, moving);
 		// Neither txpower level nor device name doesn't fit in legacy mode with our manufacturer data
 		return new AdvertiseData.Builder()
 				.setIncludeTxPowerLevel(false)
