@@ -60,6 +60,7 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 	// needed just to stop starting a new scan when service is going down
 	private volatile boolean running = false;
 
+	public double SHAKE_THRESHOLD = 0.7f;
 	public static long STATIONARY_TRESHOLD_MS = 20000L;
 	private static long STATIONARY_CHECK_DELAY = STATIONARY_TRESHOLD_MS + 5000L;
 	private static long ADVERTISINGSET_ADJUST_DELAY = 5000L;
@@ -396,8 +397,6 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 		manager.createNotificationChannel(notificationChannel);
 		return notificationChannel.getId();
 	}
-
-	public double SHAKE_THRESHOLD = 1.3;
 
 	private float[] gravity;
 	private double accel;
