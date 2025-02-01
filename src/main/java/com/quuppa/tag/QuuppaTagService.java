@@ -60,7 +60,6 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 	// needed just to stop starting a new scan when service is going down
 	private volatile boolean running = false;
 
-	public double SHAKE_THRESHOLD = 0.7f;
 	public static long STATIONARY_TRESHOLD_MS = 20000L;
 	private static long STATIONARY_CHECK_DELAY = STATIONARY_TRESHOLD_MS + 5000L;
 	private static long ADVERTISINGSET_ADJUST_DELAY = 5000L;
@@ -83,6 +82,7 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 	private volatile AdvertisingSet advertisingSet;
 
 	private AdvertisingSetParameters advertisingSetParameters;
+	private float shakeThreshold;
 	
 	private AdvertisingSetCallback createAdvertisingSetCallback() {
 		return new AdvertisingSetCallback() {
@@ -177,6 +177,7 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 			} catch (NoSuchMethodException e) {}
         
 		lastMoved = System.currentTimeMillis();
+		shakeThreshold = QuuppaTag.getShakeThreshold(this);
         
 		sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
 		accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
@@ -418,7 +419,7 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 			double delta = accelCurrent - accelLast;
 			accel = accel * 0.9f + delta;
 
-			if (accel > SHAKE_THRESHOLD) {
+			if (accel > shakeThreshold) {
 				Log.v(getClass().getSimpleName(), "Moved, was moving " + moving);
 				lastMoved = System.currentTimeMillis();
 				if (!moving) adjustAdvertisingSchedule(IntentAction.QT_MOVING);

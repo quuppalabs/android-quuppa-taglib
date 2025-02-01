@@ -45,6 +45,7 @@ public abstract class QuuppaTag {
 	public static final String PREFS_ENABLED = "ENABLED";
 	public static final String PREFS_NOTIFIED_ACTIVITY_CLASSNAME = "NOTIFIED_ACTIVITY_CLASSNAME";
 	public static final String PREFS_ADVERTISINGSET_TX_POWER = "ADV_TX_POWER";
+	public static final String PREFS_SHAKE_THRESHOLD = "SHAKE_THRESHOLD";
 	
     /** Creates a byte array with the given tag ID */
     private static byte[] createQuuppaAddress(String tagID) {
@@ -216,6 +217,26 @@ public abstract class QuuppaTag {
 		
 		Editor editor = sharedPrefs.edit();
 		editor.putInt(PREFS_ADVERTISINGSET_TX_POWER, advertisingSetTxPower);
+		editor.commit();
+	}
+	
+	public static final float DEFAULT_SHAKE_THRESHOLD = 0.3f;
+	
+	public static float getShakeThreshold(Context context) {
+        SharedPreferences sharedPrefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        return sharedPrefs.getFloat(PREFS_SHAKE_THRESHOLD, DEFAULT_SHAKE_THRESHOLD );
+	}
+	
+	/**
+	 * Set the shake threshold for the device. The shake threshold is used to determine if the device is moving or not.
+	 * @param context
+	 * @param shakeThreshold the shake threshold to set. No fixed limits but reasonable values are between 0f and 2f.
+	 */
+	public static void setShakeThreshold(Context context, float shakeThreshold) {
+		SharedPreferences sharedPrefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+		
+		Editor editor = sharedPrefs.edit();
+		editor.putFloat(PREFS_SHAKE_THRESHOLD, shakeThreshold);
 		editor.commit();
 	}
     
