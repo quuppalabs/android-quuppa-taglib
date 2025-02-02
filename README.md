@@ -8,7 +8,18 @@ See the [android-quuppa-tag demo](https://github.com/quuppalabs/demo-android-quu
 
 Also check out javadoc for the library on javadoc.io.
 
-[![javadoc](https://javadoc.io/badge2/com.quuppa/android-quuppa-taglib/javadoc.svg)](https://javadoc.io/doc/com.quuppa/android-quuppa-taglib) 
+[![javadoc](https://javadoc.io/badge2/com.quuppa/android-quuppa-taglib/javadoc.svg)](https://javadoc.io/doc/com.quuppa/android-quuppa-taglib)
+
+## Quick Start
+
+ 1. Include the latest android-quuppa-taglib in your Android application's build.gradle file by adding:
+```
+ dependencies {
+    implementation 'com.quuppa:android-quuppa-taglib:2.0.14'
+}
+```
+ 2. copy all permissions as well as _< service .. >_ and _< receiver >_ configurations from our demo Android Quuppa Tag's [AndroidManifest.xml](https://github.com/quuppalabs/demo-android-quuppa-tag/blob/main/src/main/AndroidManifest.xml) into your own application's AndroidManifest.xml
+ 3. Make sure you your application asks for necessary runtime permissions (review/copy from the demo app's [QuuppaTagEmulationDemoActivity.java](https://github.com/quuppalabs/demo-android-quuppa-tag/blob/main/src/main/java/com/quuppa/quuppatag/QuuppaTagEmulationDemoActivity.java)). Then call `QuuppaTag.start(this);` from your activity to start the service.
 
 ## Using the library
 
