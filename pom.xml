@@ -87,6 +87,24 @@
 				</configuration>
 			</plugin>
 			<plugin>
+			    <artifactId>maven-jar-plugin</artifactId>
+			    <version>3.4.2</version>
+			    <executions>
+			      <execution>
+			        <id>default-jar</id>
+			        <phase>package</phase>
+			        <goals>
+			          <goal>jar</goal>
+			        </goals>
+			        <configuration>
+			          <excludes>
+			            <exclude>android.net</exclude>
+			          </excludes>
+			        </configuration>
+			      </execution>
+			    </executions>
+			</plugin>
+			<plugin>
 				<artifactId>maven-release-plugin</artifactId>
 				<configuration>
 					<!-- By default, do not deploy site, especially for the parent itself-->
@@ -98,6 +116,25 @@
 						as gpg and attach sources is activated based on it -->
 					<arguments>-Prelease</arguments>
 				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>org.codehaus.mojo</groupId>
+				<artifactId>build-helper-maven-plugin</artifactId>
+				<version>3.2.0</version>
+				<executions>
+				<execution>
+					<id>add-source</id>
+					<phase>generate-sources</phase>
+					<goals>
+						<goal>add-source</goal>
+					</goals>
+					<configuration>
+						<sources>
+							<source>src/provided/java</source>
+						</sources>
+					</configuration>
+				</execution>
+				</executions>
 			</plugin>
 		</plugins>
 	</build>

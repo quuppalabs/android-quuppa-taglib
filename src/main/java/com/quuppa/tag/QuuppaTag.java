@@ -46,6 +46,8 @@ public abstract class QuuppaTag {
 	public static final String PREFS_NOTIFIED_ACTIVITY_CLASSNAME = "NOTIFIED_ACTIVITY_CLASSNAME";
 	public static final String PREFS_ADVERTISINGSET_TX_POWER = "ADV_TX_POWER";
 	public static final String PREFS_SHAKE_THRESHOLD = "SHAKE_THRESHOLD";
+    public static final String PREFS_SELECTED_LOCATION = "SELECTED_LOCATION";
+    public static final String PREFS_SELECTED_WIFI = "SELECTED_WIFI";
 	
     /** Creates a byte array with the given tag ID */
     private static byte[] createQuuppaAddress(String tagID) {
@@ -271,6 +273,31 @@ public abstract class QuuppaTag {
 		editor.putBoolean(QuuppaTag.PREFS_ENABLED, enabled);
 		editor.commit();
 	}
+	
+    public static String getSelectedWifi(Context context) {
+        SharedPreferences sharedPrefs = context.getSharedPreferences(QuuppaTag.PREFS, Context.MODE_PRIVATE);
+        return sharedPrefs.getString(QuuppaTag.PREFS_SELECTED_WIFI, null);
+    }
+    
+	public static void setSelectedWifi(Context context, String selectedWifi) {
+		SharedPreferences sharedPrefs = context.getSharedPreferences(QuuppaTag.PREFS, Context.MODE_PRIVATE);
+		Editor editor = sharedPrefs.edit();
+		editor.putString(QuuppaTag.PREFS_SELECTED_WIFI, selectedWifi);
+		editor.commit();
+	}
+
+    public static String getSelectedLocation(Context context) {
+        SharedPreferences sharedPrefs = context.getSharedPreferences(QuuppaTag.PREFS, Context.MODE_PRIVATE);
+        return sharedPrefs.getString(QuuppaTag.PREFS_SELECTED_LOCATION, null);
+    }
+    
+	public static void setSelectedLocation(Context context, String selectedLocation) {
+		SharedPreferences sharedPrefs = context.getSharedPreferences(QuuppaTag.PREFS, Context.MODE_PRIVATE);
+		Editor editor = sharedPrefs.edit();
+		editor.putString(QuuppaTag.PREFS_SELECTED_LOCATION, selectedLocation);
+		editor.commit();
+	}
+	
 	
 	@SuppressWarnings("unchecked")
 	public static Class<? extends Activity> getNotifiedActivityClass(Context context) {

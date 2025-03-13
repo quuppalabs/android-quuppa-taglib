@@ -16,6 +16,7 @@ import java.lang.reflect.Method;
 
 import com.quuppa.tag.QuuppaTag.DeviceType;
 
+import android.annotation.NonNull;
 import android.app.Activity;
 import android.app.AlarmManager;
 import android.app.Notification;
@@ -30,17 +31,28 @@ import android.bluetooth.le.AdvertisingSetParameters;
 import android.bluetooth.le.BluetoothLeAdvertiser;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.graphics.drawable.Icon;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
+import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
+import android.net.NetworkRequest;
+import android.net.wifi.WifiInfo;
 import android.os.Build;
+import android.os.Bundle;
 import android.os.IBinder;
 import android.os.PowerManager;
 import android.util.Log;
 
 public class QuuppaTagService extends Service implements SensorEventListener {
+	public static float LOCATION_MAX_RADIUS_METERS = 1000;
 	public static Icon ICON;
 	public static String NOTIFICATION_CHANNEL_ID = "QuuppaTagNotification";
 	public static String NOTIFICATION_CHANNEL_NAME = "Quuppa Tag Notifications";
@@ -59,6 +71,8 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 
 	// needed just to stop starting a new scan when service is going down
 	private volatile boolean running = false;
+	
+	private volatile boolean active = true;
 
 	public static long STATIONARY_TRESHOLD_MS = 20000L;
 	private static long STATIONARY_CHECK_DELAY = STATIONARY_TRESHOLD_MS + 5000L;
@@ -83,6 +97,85 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 
 	private AdvertisingSetParameters advertisingSetParameters;
 	private float shakeThreshold;
+	
+    private final NetworkRequest networkRequest =
+            new NetworkRequest.Builder()
+                    .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+                    .build();
+	private ConnectivityManager connectivityManager;
+	private LocationManager locationManager;
+	private LocationListener locationListener = new LocationListener() {
+	    @Override
+	    public void onLocationChanged(@NonNull Location location) {
+	        activateWithinLocation(location);
+	    }
+
+		@Override
+		public void onStatusChanged(String provider, int status, Bundle extras) {}
+
+		@Override
+		public void onProviderEnabled(String provider) {}
+
+		@Override
+		public void onProviderDisabled(String provider) {}
+	};
+	
+    private ConnectivityManager.NetworkCallback networkCallback;
+	private Notification notification;
+    
+    private void onNetworkLost(Network network) {
+		if (!isEnabled()) return;
+		if (!isConditionallyActive()) return;
+        String selectedSsid = QuuppaTag.getSelectedWifi(QuuppaTagService.this);
+        if (selectedSsid == null) return;
+
+        boolean wasRunning = running;
+        active = false;
+        stop();
+		if (wasRunning) Log.i(QuuppaTagService.class.getSimpleName(), "Deactivated broadcasting because Wi-Fi network was lost or disabled");
+    }
+    
+    private void onNetworkCapabilitiesChanged(Network network, NetworkCapabilities networkCapabilities) {
+        Log.d(QuuppaTagService.class.getSimpleName(), "onCapabilitiesChanged() called");
+		
+		if (!isEnabled()) return;
+		if (!isConditionallyActive()) return;
+        String selectedSsid = QuuppaTag.getSelectedWifi(QuuppaTagService.this);
+        if (selectedSsid == null) return;
+        // Don't allow calling this operation from device with API level < 29
+        try {
+            Method method = NetworkCapabilities.class.getMethod("getTransportInfo", new Class<?>[]{});
+            WifiInfo wifiInfo = (WifiInfo) method.invoke(networkCapabilities);
+            
+			if (wifiInfo == null) {
+                active = false;
+                running = false;
+    			Log.i(QuuppaTagService.class.getSimpleName(), "Deactivated broadcasting because not in the selected Wi-Fi network anymore");
+				return;
+			}
+
+            String ssid = wifiInfo.getSSID();
+            
+            boolean wasRunning = running;
+            if (ssid == null || "<unknown ssid>".equalsIgnoreCase(ssid)) {
+                Log.w(QuuppaTagService.class.getSimpleName(), "Couldn't read SSID of current Wi-Fi, likely because of a permisson problem, we must keep broadcasting always active");
+            	active = true;
+            }
+            else active = ssid.equals(selectedSsid);
+            
+            if (!active) {
+            	stop();
+    			Log.i(QuuppaTagService.class.getSimpleName(), "Deactivated broadcasting because not in the selected Wi-Fi network anymore");
+            }
+            else if (!wasRunning) {
+            	QuuppaTagService.this.startForegroundService(new Intent(QuuppaTagService.this, QuuppaTagService.class));
+    			Log.i(QuuppaTagService.class.getSimpleName(), "Activated broadcasting after connecting to the selected Wi-Fi network");
+            }
+        } catch (Exception e) {
+			Log.e(QuuppaTagService.class.getSimpleName(), "Error while wifi capabilities changed: " + e.getMessage());
+			e.printStackTrace();
+        }
+    }
 	
 	private AdvertisingSetCallback createAdvertisingSetCallback() {
 		return new AdvertisingSetCallback() {
@@ -116,10 +209,87 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 			}
 		};
 	}
+	
+    private Location getSelectedLocation() {
+        String locationString = QuuppaTag.getSelectedLocation(this);
+        if (locationString == null) return null;
+
+        try {
+            String[] parts = locationString.split(",");
+            double lat = Double.parseDouble(parts[0]);
+            double lon = Double.parseDouble(parts[1]);
+
+            Location location = new Location("stored");
+            location.setLatitude(lat);
+            location.setLongitude(lon);
+            return location;
+        } catch (Exception e) {
+            Log.e(QuuppaTagService.class.getSimpleName(), "Invalid saved location format, erasing", e);
+            QuuppaTag.setSelectedLocation(this, null);
+            return null;
+        }
+    }	
+	
+	private void activateWithinLocation(Location currentLocation) {
+		Location selectedLocation = getSelectedLocation();
+		if (selectedLocation == null)
+			return;
+
+		float distance = currentLocation.distanceTo(selectedLocation);
+		
+		boolean wasActive = active;
+		active = distance <= LOCATION_MAX_RADIUS_METERS; 
+		if (active != wasActive) {
+			if (active) {
+    			Log.i(getClass().getSimpleName(), "Activated broadcasting as device entered selected location radius");
+				startForegroundService(new Intent(this, QuuppaTagService.class));
+			} else {
+    			Log.i(getClass().getSimpleName(), "Deactivated broadcasting as device exited selected location radius");
+				stop();
+			}
+		}
+	}
 
 	@Override
 	public void onCreate() {
 		super.onCreate();
+		
+        if (Build.VERSION.SDK_INT >= 31) {
+			// ConnectivityManager.NetworkCallback.FLAG_INCLUDE_LOCATION_INFO in API 31, const value 1
+        	// without passing the flag, we couldn't read the SSID
+		    networkCallback = new ConnectivityManager.NetworkCallback(1) {
+				@Override
+				public void onLost(Network network) {
+					onNetworkLost(network);
+				}
+				
+				@Override
+		        public void onCapabilitiesChanged(Network network, NetworkCapabilities networkCapabilities) {
+					onNetworkCapabilitiesChanged(network, networkCapabilities);
+		        }
+		    };
+        }
+        else {
+		    networkCallback = new ConnectivityManager.NetworkCallback() {
+				@Override
+				public void onLost(Network network) {
+					onNetworkLost(network);
+				}
+				
+				@Override
+		        public void onCapabilitiesChanged(Network network, NetworkCapabilities networkCapabilities) {
+					onNetworkCapabilitiesChanged(network, networkCapabilities);
+		        }
+		    };
+        }
+		
+        connectivityManager = getSystemService(ConnectivityManager.class);
+        // Don't register at all on lower API levels because the networkCallback.onCapabilitiesChanged() uses getTransportInfo() 
+		if (Build.VERSION.SDK_INT >= 29) connectivityManager.registerNetworkCallback(networkRequest, networkCallback);
+		
+		
+		locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+		
 		ICON = Icon.createWithResource(this, android.R.drawable.ic_menu_mylocation); //  only mylocation available in 8, otherwise could also use perm_group_location as default
 
 		notificationChannelId = createNotificationChannel(this);
@@ -132,30 +302,20 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 		}
 
 		// content intent *can be* null, in that case user clicking notification just doesn't lead anywhere
-		Notification notification = new Notification.Builder(this, NOTIFICATION_CHANNEL_ID)
+		notification = new Notification.Builder(this, NOTIFICATION_CHANNEL_ID)
 				.setContentTitle("Quuppa Tag Service").setContentText(NOTIFICATION_DEFAULT_TEXT).setSmallIcon(ICON)
 				.setVisibility(Notification.VISIBILITY_PRIVATE)
 				.setContentIntent(pendingIntent).build();
-		if (Build.VERSION.SDK_INT >= 34) // Build.VERSION_CODES.UPSIDE_DOWN_CAKE 
-		{
-            // startForeground(1, notification, 8) 
-			try {
-				// Note: Beginning with SDK Version Build.VERSION_CODES.UPSIDE_DOWN_CAKE, apps targeting SDK Version 
-				// Build.VERSION_CODES.UPSIDE_DOWN_CAKE or higher are not allowed to start foreground services without 
-				// specifying a valid foreground service type in the manifest attribute R.attr.foregroundServiceType, 
-				// and the parameter foregroundServiceType here must not be the ServiceInfo.FOREGROUND_SERVICE_TYPE_NONE. 
-				// See Behavior changes: Apps targeting Android 14 for more details.
-				// https://developer.android.com/reference/android/app/Service#startForeground(int,%20android.app.Notification,%20int)
-				Method method = getClass().getMethod("startForeground", new Class[] {int.class, Notification.class, int.class});
-				// We don't need location updates - yes RTLS produces location, but the app doesn't need it
-				// method.invoke(this, 1, notification, 8); // ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION 
-				method.invoke(this, 1, notification, 16); // ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE 
-			} catch (Exception e) {
-				// shouldn't fail
-				Log.v(QuuppaTagService.class.getSimpleName(), "startForeground failed because: " + e.getCause());
-			}
-		}
-        else startForeground(1, notification);
+	}
+	
+	private void registerLocationListener() {
+//        Criteria criteria = new Criteria();
+//        criteria.setAccuracy(Criteria.ACCURACY_COARSE);
+//        String bestProvider = locationManager.getBestProvider(criteria, true);
+		locationManager.requestLocationUpdates(LocationManager.FUSED_PROVIDER, 10000, 0, locationListener);
+	}
+	private void unregisterLocationListener() {
+		locationManager.removeUpdates(locationListener);
 	}
 	
 	private void init() {
@@ -180,6 +340,7 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 		shakeThreshold = QuuppaTag.getShakeThreshold(this);
         
 		sensorManager = (SensorManager) getSystemService(Context.SENSOR_SERVICE);
+		
 		accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
 		sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_NORMAL);
 		
@@ -199,6 +360,32 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 
 		if (!isEnabled()) return START_NOT_STICKY;
 		
+		if (Build.VERSION.SDK_INT >= 34) // Build.VERSION_CODES.UPSIDE_DOWN_CAKE 
+		{
+            // startForeground(1, notification, 8) 
+			try {
+				// Note: Beginning with SDK Version Build.VERSION_CODES.UPSIDE_DOWN_CAKE, apps targeting SDK Version 
+				// Build.VERSION_CODES.UPSIDE_DOWN_CAKE or higher are not allowed to start foreground services without 
+				// specifying a valid foreground service type in the manifest attribute R.attr.foregroundServiceType, 
+				// and the parameter foregroundServiceType here must not be the ServiceInfo.FOREGROUND_SERVICE_TYPE_NONE. 
+				// See Behavior changes: Apps targeting Android 14 for more details.
+				// https://developer.android.com/reference/android/app/Service#startForeground(int,%20android.app.Notification,%20int)
+				Method method = getClass().getMethod("startForeground", new Class[] {int.class, Notification.class, int.class});
+				// We don't need location updates - yes RTLS produces location, but the app doesn't need it
+				method.invoke(this, 1, notification, 8); // ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION 
+				// method.invoke(this, 1, notification, 16); // ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE 
+			} catch (Exception e) {
+				// shouldn't fail
+				Log.v(QuuppaTagService.class.getSimpleName(), "startForeground failed because: " + e.getCause());
+			}
+		}
+        else startForeground(1, notification);
+		
+		if (QuuppaTag.getSelectedLocation(this) != null) registerLocationListener();
+		else unregisterLocationListener();
+		
+		if (!active) return START_STICKY;
+		
 		boolean wasRunning = running;
 		
 		if (!running) {
@@ -217,6 +404,12 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 	private boolean isEnabled() {
 		return QuuppaTag.isServiceEnabled(this);
 	}
+	
+    private boolean isConditionallyActive() {
+        SharedPreferences sharedPrefs = getSharedPreferences(QuuppaTag.PREFS, Context.MODE_PRIVATE);
+        return sharedPrefs.getString(QuuppaTag.PREFS_SELECTED_LOCATION, null) != null  || sharedPrefs.getString(QuuppaTag.PREFS_SELECTED_WIFI, null) != null;
+    }
+	
 
 	protected void adjustAdvertisingSchedule(IntentAction intentAction) {
 		if (!running) return;
@@ -369,26 +562,32 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 	@Override
 	public void onDestroy() {
 		Log.d(getClass().getSimpleName(), "service onDestroy()");
-		
+
 		if (running) sendBroadcast(new Intent(IntentAction.QT_STOPPED.fullyQualifiedName()));
+		stop();
+
+		connectivityManager.unregisterNetworkCallback(networkCallback);
+		unregisterLocationListener();
 		
+		NotificationManager manager = getSystemService(NotificationManager.class);
+		if (notificationChannelId != null)
+			manager.deleteNotificationChannel(notificationChannelId);
+		notificationChannelId = null;
+
+		super.onDestroy();
+	}
+	
+	private void stop() {
 		running = false;
 		if (sensorManager != null) sensorManager.unregisterListener(this);
 
 		if (advertisingStarted) stopAdvertisingSet();
 		stopStationaryCheckAlarm();
 
-		NotificationManager manager = getSystemService(NotificationManager.class);
-		if (notificationChannelId != null)
-			manager.deleteNotificationChannel(notificationChannelId);
-		notificationChannelId = null;
-
 		// Release wake lock
 		if (wakeLock != null && wakeLock.isHeld()) {
 			wakeLock.release();
 		}
-
-		super.onDestroy();
 	}
 
 	private static String createNotificationChannel(Context context) {
