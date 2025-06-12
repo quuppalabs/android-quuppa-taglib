@@ -60,4 +60,8 @@ This library is really not so useful outside Real-Time Locationing System (RTLS)
 
 ## License
 
-Licensed under Apache 2.0 License.
+Licensed under Apache 2.0 License. 
+
+Additional Terms:  
+Neither the name "Quuppa" nor the names of the contributors to the android-quuppa-taglib repository may be used to endorse or promote products derived from the android-quuppa-taglib repository without the prior written permission of Quuppa Oy.
+
