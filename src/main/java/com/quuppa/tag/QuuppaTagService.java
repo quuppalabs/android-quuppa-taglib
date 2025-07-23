@@ -63,7 +63,7 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 	private SensorManager sensorManager;
 	private Sensor accelerometer;
 	private PowerManager.WakeLock wakeLock;
-
+	
 	private String notificationChannelId;
 
 	private long lastMoved;
@@ -91,7 +91,8 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 	private Class<? extends Activity> notifiedActivityClass;
 
 	private AdvertisingSetCallback advertisingSetCallback = createAdvertisingSetCallback();
-	private boolean canScheduleExactAlarms;
+	private boolean canScheduleExactAlarms = true;
+	private Method canScheduleExactAlarmsMethod = null;
 
 	private volatile AdvertisingSet advertisingSet;
 
@@ -324,16 +325,17 @@ public class QuuppaTagService extends Service implements SensorEventListener {
         alarmManager = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
         if ((Build.VERSION.SDK_INT >= 31))
 			try {
-				Method canScheduleExactAlarmsMethod = AlarmManager.class.getMethod("canScheduleExactAlarms");
-				boolean canScheduleExactAlarms = false;
+				canScheduleExactAlarmsMethod = AlarmManager.class.getMethod("canScheduleExactAlarms");
+				canScheduleExactAlarms = false;
 				try {
 					canScheduleExactAlarms = (boolean) canScheduleExactAlarmsMethod.invoke(alarmManager);
 				} catch (Exception e) {} 
-				if (!canScheduleExactAlarms) {
-			        QuuppaTag.setServiceEnabled(this, false);
-					sendBroadcast(new Intent(IntentAction.QT_SCHEDULE_NOT_ENABLED.fullyQualifiedName()));
-					return;
-				}
+				// If we can't setExact, we'll just schedule with set (i.e. foreground mode only
+//				if (!canScheduleExactAlarms) {
+//			        QuuppaTag.setServiceEnabled(this, false);
+//					sendBroadcast(new Intent(IntentAction.QT_SCHEDULE_NOT_ENABLED.fullyQualifiedName()));
+//					return;
+//				}
 			} catch (NoSuchMethodException e) {}
         
 		lastMoved = System.currentTimeMillis();
@@ -414,6 +416,10 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 	protected void adjustAdvertisingSchedule(IntentAction intentAction) {
 		if (!running) return;
 		
+		if (canScheduleExactAlarmsMethod != null) try {
+			canScheduleExactAlarms = (boolean) canScheduleExactAlarmsMethod.invoke(alarmManager);
+		} catch (Exception e) {}
+		
 		boolean wasMoving = moving;
 		moving = (System.currentTimeMillis() - lastMoved < STATIONARY_TRESHOLD_MS);
 		// from periodic check, always schedule next while moving
@@ -480,8 +486,15 @@ public class QuuppaTagService extends Service implements SensorEventListener {
 			Log.e(getClass().getSimpleName(), "Couldn't start stationary check alarm, alarm manager is null");
 			return;
 		}
-		getSystemService(AlarmManager.class).setExact(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + delay,
-				getStationaryAlarmIntent());
+		
+		// Don't use the isBackgroundMode flag here.. we could log a warning, but directly check the alarmamanager 
+		// alarmManager.canScheduleExactAlarms()
+		if (canScheduleExactAlarms) getSystemService(AlarmManager.class).setExact(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + delay,
+					getStationaryAlarmIntent());
+		else {
+			if (canScheduleExactAlarmsMethod != null && QuuppaTag.isBackgroundMode(this)) Log.w(getClass().getSimpleName(), "QuuppaTag BackgroundMode is enabled but app has no permissions to set exact alarams");
+			getSystemService(AlarmManager.class).set(AlarmManager.RTC_WAKEUP, System.currentTimeMillis() + delay, getStationaryAlarmIntent());
+		}
 	}
 
 	private void stopStationaryCheckAlarm() {

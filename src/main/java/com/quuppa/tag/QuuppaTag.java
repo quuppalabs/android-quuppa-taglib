@@ -43,6 +43,7 @@ public abstract class QuuppaTag {
     public static final String PREFS_TAG_ID = "TAG_ID";
 	public static final String PREFS_DEVICETYPE = "DEVICETYPE";
 	public static final String PREFS_ENABLED = "ENABLED";
+    public static final String PREFS_BACKGROUND_MODE = "BACKGROUND_MODE";
 	public static final String PREFS_NOTIFIED_ACTIVITY_CLASSNAME = "NOTIFIED_ACTIVITY_CLASSNAME";
 	public static final String PREFS_ADVERTISINGSET_TX_POWER = "ADV_TX_POWER";
 	public static final String PREFS_SHAKE_THRESHOLD = "SHAKE_THRESHOLD";
@@ -205,6 +206,19 @@ public abstract class QuuppaTag {
 		editor.putString(PREFS_TAG_ID, tagId);
 		editor.commit();
 	}
+	
+    public static void setBackgroundMode(Context context, boolean mode) {
+        SharedPreferences sharedPrefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        Editor editor = sharedPrefs.edit();
+        editor.putBoolean(PREFS_BACKGROUND_MODE, mode);
+        editor.commit();
+    }
+
+    public static boolean isBackgroundMode(Context context) {
+        SharedPreferences sharedPrefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        // Default is intentionally true for the lib, although the sample app has it as false because you can easily flip it in the UI
+        return sharedPrefs.getBoolean(PREFS_BACKGROUND_MODE, true);
+    }
 	
 	public static int getAdvertisingSetTxPower(Context context) {
         SharedPreferences sharedPrefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
@@ -375,7 +389,7 @@ public abstract class QuuppaTag {
 			throw new QuuppaTagException("QuuppaTag is not controllable because Bluetooth is not enabled");
 		return btAdapter.getBluetoothLeAdvertiser();
 	}
-	
+		
 	public static void restart(Context context) {
         setServiceEnabled(context, true);
         Intent intent = new Intent(context, QuuppaTagService.class);
