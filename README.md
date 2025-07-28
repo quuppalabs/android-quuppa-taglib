@@ -15,7 +15,7 @@ Also check out javadoc for the library on javadoc.io.
  1. Include the latest android-quuppa-taglib in your Android application's build.gradle file by adding:
 ```
  dependencies {
-    implementation 'com.quuppa:android-quuppa-taglib:2.0.14'
+    implementation 'com.quuppa:android-quuppa-taglib:2.0.17'
 }
 ```
  2. copy all permissions as well as _< service .. >_ and _< receiver >_ configurations from our demo Android Quuppa Tag's [AndroidManifest.xml](https://github.com/quuppalabs/demo-android-quuppa-tag/blob/main/src/main/AndroidManifest.xml) into your own application's AndroidManifest.xml
