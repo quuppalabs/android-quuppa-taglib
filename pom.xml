@@ -40,6 +40,7 @@
 			<id>quuppalabs-site</id>
 			<url>gitsite:git@github.com/quuppalabs/android-quuppa-taglib.git</url>
 		</site>
+		<!-- Handled by central-publishing-maven-plugin 
 		<snapshotRepository>
 			<id>ossrh</id>
 			<url>https://s01.oss.sonatype.org/content/repositories/snapshots</url>
@@ -47,7 +48,8 @@
 		<repository>
 			<id>ossrh</id>
 			<url>https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/</url>
-		</repository>		
+		</repository>
+		-->
 	</distributionManagement>
 	
 	<build>
@@ -115,6 +117,17 @@
 						whole duration of release:perform but only deploy part. We need release available 
 						as gpg and attach sources is activated based on it -->
 					<arguments>-Prelease</arguments>
+				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>org.sonatype.central</groupId>
+				<artifactId>central-publishing-maven-plugin</artifactId>
+				<version>0.8.0</version>
+				<extensions>true</extensions>
+				<configuration>
+					<autoPublish>true</autoPublish>
+					<waitUntil>validated</waitUntil>                  
+					<publishingServerId>central</publishingServerId>
 				</configuration>
 			</plugin>
 			<plugin>
