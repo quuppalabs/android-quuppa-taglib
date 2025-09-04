@@ -4,7 +4,7 @@ An Android Quuppa Tag emulation library to be included into Android application 
 
 ## Getting Started
 
-See the [android-quuppa-tag demo](https://github.com/quuppalabs/demo-android-quuppa-tag) for an example of how to use this library. Review our full [Android Tag Emulation Specification v2.0](https://github.com/quuppalabs/android-quuppa-taglib/blob/main/Quuppa-Tag-Emulation-for-Android-Devices-v2.0.pdf) to understand the structure of Quuppa specific advertisement data.
+See the [android-quuppa-tag demo](https://github.com/quuppalabs/demo-android-quuppa-tag) for an example of how to use this library. Review our full [Android Tag Emulation Specification v2.1](https://github.com/quuppalabs/android-quuppa-taglib/blob/main/Quuppa%20Tag%20Emulation%20for%20Android%20Devices%20v2.1.pdf) to understand the structure of Quuppa specific advertisement data.
 
 Also check out javadoc for the library on javadoc.io.
 
